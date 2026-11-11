@@ -382,7 +382,7 @@ def run_review(config, files, refs=(), *, mode="primary", static_only=False, pro
         used_refs.update(x.id for x in relevant)
         anchors = {(x.path, x.side, x.number): x for x in batch if x.changed and x.text.strip()}
         data = {"diff": [line.row() for line in batch], "context": [x.payload() for x in relevant]}
-        if pr_text:
+        if config.include_pr_text and pr_text:
             data["pr"] = redact(pr_text)[:3000]
         packs.append((_system(config, batch), json.dumps(data, ensure_ascii=False, separators=(",", ":")),
                       anchors, {x.id: x for x in relevant}))

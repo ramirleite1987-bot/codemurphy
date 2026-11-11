@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 12
     steps:
       # Replace the version tag with its verified full commit SHA in production.
-      - uses: ramirleite1987-bot/codemurphy@v0.3.0
+      - uses: ramirleite1987-bot/codemurphy@v0.3.1
         with:
           trusted-base: main
           config-path: .codemurphy.openrouter.json

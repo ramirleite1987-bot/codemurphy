@@ -25,7 +25,8 @@
     "max_comments": 5,
     "max_batches": 8,
     "max_parallel": 2,
-    "instructions": "Reporte só regressões reproduzíveis. Exija evidência e um teste concreto. Não declare CVEs ou exposição em produção sem evidência."
+    "instructions": "Reporte só regressões reproduzíveis. Exija evidência e um teste concreto. Não declare CVEs ou exposição em produção sem evidência.",
+    "include_pr_text": false
   },
   "context": {
     "files": [],

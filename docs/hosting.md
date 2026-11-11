@@ -17,6 +17,9 @@ AWS ou precisa de isolamento, filas e controle central de acesso.
    são exemplos; confirme que o modelo suporta a resposta estruturada.
    Se o projeto já tem regras em `.codemurphy.json`, preserve a política
    relevante e revise os arquivos de contexto antes de autorizar o envio.
+   Use `review.include` para delimitar os caminhos do diff, `review.exclude`
+   para exceções e `review.include_pr_text: false` para omitir título e
+   descrição do PR. `context.files` é uma lista separada de referências.
 3. Adicione [o workflow](../examples/github-review-openrouter.yml) em
    `.github/workflows/` e fixe a Action por SHA. Ative a variável de
    repositório `CODEMURPHY_OPENROUTER=true` quando o projeto puder usar o

@@ -117,7 +117,9 @@ class Config:
     models: tuple[Model, ...] = ()
     primary: str | None = None
     categories: tuple[str, ...] = tuple(RUBRIC)
+    include: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
+    include_pr_text: bool = True
     language: str = "English"
     instructions: str = ""
     rules: tuple[tuple[tuple[str, ...], str], ...] = ()
@@ -136,7 +138,9 @@ class Config:
     linked: tuple[Linked, ...] = ()
 
     def excluded(self, path):
-        return sensitive_path(path) or any(match_path(path, pattern) for pattern in self.exclude)
+        return (sensitive_path(path) or
+                (bool(self.include) and not any(match_path(path, pattern) for pattern in self.include)) or
+                any(match_path(path, pattern) for pattern in self.exclude))
 
     def instructions_for(self, paths):
         return tuple((patterns, text) for patterns, text in self.rules if
@@ -231,7 +235,7 @@ def load_config(raw=None):
         except ValueError as exc:
             raise ConfigError(f"Invalid config JSON: {exc.msg if isinstance(exc, json.JSONDecodeError) else 'invalid value'}") from None
     obj(raw, "models primary review context", "config")
-    review = obj(raw.get("review", {}), "categories exclude language instructions rules min_severity "
+    review = obj(raw.get("review", {}), "categories include exclude include_pr_text language instructions rules min_severity "
                  "min_confidence max_comments chunk_chars max_diff_chars max_context_chars max_batches "
                  "max_parallel timeout structured_comments verify_with", "review")
     context = obj(raw.get("context", {}), "files linked", "context")
@@ -242,6 +246,9 @@ def load_config(raw=None):
         raise ConfigError("Use unique model IDs and select a configured primary model")
     structured = review.get("structured_comments", False)
     verifier = review.get("verify_with")
+    include_pr_text = review.get("include_pr_text", True)
+    if type(include_pr_text) is not bool:
+        raise ConfigError("review.include_pr_text must be a boolean")
     if type(structured) is not bool:
         raise ConfigError("review.structured_comments must be a boolean")
     if verifier is not None:
@@ -277,7 +284,8 @@ def load_config(raw=None):
     chunk = bounded("chunk_chars", 14000, 256, 50000)
     budget = bounded("max_diff_chars", 80000, chunk, 500000)
     return Config(models=models, primary=primary, categories=categories,
-                  exclude=patterns(review.get("exclude", [])),
+                  include=patterns(review.get("include", [])), exclude=patterns(review.get("exclude", [])),
+                  include_pr_text=include_pr_text,
                   language=string(review.get("language", "English"), "language", 48),
                   instructions=instructions, rules=tuple(rules), min_severity=severity,
                   min_confidence=number(review.get("min_confidence", .7), "min_confidence", 0, 1),
