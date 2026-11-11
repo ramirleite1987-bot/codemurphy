@@ -20,9 +20,11 @@ class Reference:
     private: bool = False
     start_line: int = 1
 
-    def payload(self):
-        return {"id": self.id, "repo": self.repo, "commit": self.commit, "path": self.path,
-                "start_line": self.start_line, "text": self.text}
+    def payload(self, *, numbered=False):
+        origin = {"id": self.id, "repo": self.repo, "commit": self.commit, "path": self.path}
+        if numbered:
+            return {**origin, "lines": list(enumerate(self.text.split("\n"), self.start_line))}
+        return {**origin, "start_line": self.start_line, "text": self.text}
 
 
 def reference(identifier, repo, commit, path, blob, private=False):
@@ -64,7 +66,7 @@ def _terms(text):
         "self", "this", "the", "for", "and", "from", "with", "not", "class", "import"}
 
 
-def select_refs(refs, batch, budget):
+def select_refs(refs, batch, budget, *, numbered=False):
     terms = _terms(" ".join(f"{line.path} {line.text}" for line in batch if line.changed))
     candidates = []
     for ref in refs:
@@ -78,7 +80,7 @@ def select_refs(refs, batch, budget):
     for _, _, _, ref in sorted(candidates, key=lambda x: (-x[0], x[1], x[2])):
         if ref.id in used:
             continue
-        cost = len(json.dumps(ref.payload(), ensure_ascii=False, separators=(",", ":"))) + 1
+        cost = len(json.dumps(ref.payload(numbered=numbered), ensure_ascii=False, separators=(",", ":"))) + 1
         if cost > budget:
             continue
         picked.append(ref)

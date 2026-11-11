@@ -30,6 +30,57 @@ class CommentQualityTests(unittest.TestCase):
                                 "quote": "An import retry must not create a second ledger entry."}]}
         return config, files, refs, issue
 
+    def test_numbered_evidence_resolves_source_and_rejects_unknown_references(self):
+        cfg, files, refs, issue = self.setup_review(verify_with="critic", anchored_evidence=True)
+        cfg = replace(cfg, models=tuple(replace(m, json_schema=True) for m in cfg.models))
+        refs = [replace(refs[0], start_line=45)]
+        kept = {key: value for key, value in issue.items() if key not in ("path", "side", "line", "quote", "citations")}
+
+        def provider(model, system, data, timeout, *, schema):
+            payload = json.loads(data)
+            if model.id == "primary":
+                anchor_id = payload["diff"][0][5]
+                self.assertEqual(payload["context"][0]["lines"][0], [45, refs[0].text])
+                fields = schema["properties"]["findings"]["items"]["properties"]
+                self.assertEqual(fields["anchor_id"]["enum"], [anchor_id])
+                self.assertNotIn("quote", fields)
+                valid = {**kept, "anchor_id": anchor_id,
+                         "before_behavior": "The idempotency check reused the previous entry.",
+                         "citations": [{"id": "project:1", "line": 45}]}
+                invalid_anchor = {**valid, "anchor_id": "D9999"}
+                invalid_ref = {**valid, "citations": [{"id": "project:1", "line": 44}]}
+                return Reply(json.dumps({"findings": [valid, invalid_anchor, invalid_ref]}), 80, 35)
+            [candidate] = payload["candidates"]
+            self.assertEqual(candidate["evidence"], "persist(row)")
+            fields = schema["properties"]["confirmed"]["items"]["properties"]
+            self.assertNotIn("quote", fields)
+            return Reply(json.dumps({"confirmed": [{"id": candidate["id"]}]}), 60, 10)
+
+        report = run_review(cfg, files, refs, provider=provider)
+        self.assertEqual(report["models"]["primary"]["rejected_reasons"],
+                         {"unknown_diff_anchor": 1, "unknown_context_line": 1})
+        [accepted] = publication_findings(report)
+        self.assertEqual((accepted["path"], accepted["line"], accepted["citations"][0]["line"]),
+                         ("src/import.py", 5, 45))
+        self.assertEqual(report["verification"]["confirmed"], 1)
+
+    def test_legacy_diagnostics_count_only_safe_reason_codes(self):
+        cfg, files, refs, issue = self.setup_review()
+        invalid = [
+            {**issue, "quote": "synthetic raw text that must not be retained"},
+            {**issue, "citations": [{**issue["citations"][0], "quote": "Wrong context text"}]},
+            {**issue, "trigger": "a" * 801},
+        ]
+
+        def provider(model, system, data, timeout):
+            return Reply(json.dumps({"findings": invalid}), 50, 30)
+
+        report = run_review(cfg, files, refs, provider=provider)
+        self.assertEqual(report["models"]["primary"]["rejected"], 3)
+        self.assertEqual(report["models"]["primary"].get("rejected_reasons"),
+                         {"diff_quote_mismatch": 1, "context_quote_mismatch": 1, "too_long_trigger": 1})
+        self.assertNotIn("synthetic raw text that must not be retained", json.dumps(report))
+
     def test_only_confirmed_findings_reach_publication_and_critics_see_context(self):
         cfg, files, refs, issue = self.setup_review(verify_with="critic")
         def provider(model, system, data, timeout):

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codemurphy"
-version = "0.3.2"
+version = "0.3.3"
 description = "Evidence-based, multi-model code review and benchmarking"
 readme = "README.md"
 requires-python = ">=3.11"

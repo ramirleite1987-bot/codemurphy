@@ -23,7 +23,9 @@ def comment(issue, *, language="English"):
     categories = f"{plain(issue['severity'])} · {plain(issue['category'])}"
     body = f"**{plain(issue['title'])}** ({categories})"
     if issue.get("trigger"):
-        fields = ((trigger, "trigger"), (impact, "impact"), (fix, "suggestion"), (check, "verification"))
+        fields = [(trigger, "trigger"), (impact, "impact"), (fix, "suggestion"), (check, "verification")]
+        if issue.get("before_behavior"):
+            fields.insert(1, ("Antes da mudança" if pt else "Before the change", "before_behavior"))
         body += "".join(f"\n\n**{label}:** {plain(issue[key])}" for label, key in fields)
     else:
         body += f"\n\n{plain(issue['detail'])}\n\n**{fix}:** {plain(issue['suggestion'])}"
@@ -66,6 +68,9 @@ def markdown(report, *, summary=False, issues=None):
         for model, stats in report["models"].items():
             if stats["errors"]:
                 lines.append(f"\n{plain(model)}: {', '.join(plain(x) for x in stats['errors'])}.")
+            if reasons := stats.get("rejected_reasons"):
+                labels = ", ".join(f"{plain(reason)}: {count}" for reason, count in reasons.items())
+                lines.append(f"\n{plain(model)} rejected findings: {labels}.")
     if verification := report.get("verification"):
         lines.append(f"\nSecond review ({plain(verification['reviewer'])}): "
                      f"{verification['confirmed']}/{verification['checked']} confirmed, "

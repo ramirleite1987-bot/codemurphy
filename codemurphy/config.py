@@ -127,6 +127,7 @@ class Config:
     min_confidence: float = 0.70
     max_comments: int = 12
     structured_comments: bool = False
+    anchored_evidence: bool = False
     verify_with: str | None = None
     chunk_chars: int = 14000
     max_diff_chars: int = 80000
@@ -237,7 +238,7 @@ def load_config(raw=None):
     obj(raw, "models primary review context", "config")
     review = obj(raw.get("review", {}), "categories include exclude include_pr_text language instructions rules min_severity "
                  "min_confidence max_comments chunk_chars max_diff_chars max_context_chars max_batches "
-                 "max_parallel timeout structured_comments verify_with", "review")
+                 "max_parallel timeout structured_comments anchored_evidence verify_with", "review")
     context = obj(raw.get("context", {}), "files linked", "context")
     models = tuple(_model(x) for x in array(raw.get("models", []), "models", 8))
     ids = {m.id for m in models}
@@ -245,12 +246,15 @@ def load_config(raw=None):
     if len(ids) != len(models) or (models and (not isinstance(primary, str) or primary not in ids)) or (not models and primary is not None):
         raise ConfigError("Use unique model IDs and select a configured primary model")
     structured = review.get("structured_comments", False)
+    anchored = review.get("anchored_evidence", False)
     verifier = review.get("verify_with")
     include_pr_text = review.get("include_pr_text", True)
     if type(include_pr_text) is not bool:
         raise ConfigError("review.include_pr_text must be a boolean")
     if type(structured) is not bool:
         raise ConfigError("review.structured_comments must be a boolean")
+    if type(anchored) is not bool or anchored and not structured:
+        raise ConfigError("review.anchored_evidence must be a boolean and requires structured_comments")
     if verifier is not None:
         if not isinstance(verifier, str) or verifier not in ids:
             raise ConfigError("review.verify_with must be a configured model ID or null")
@@ -290,6 +294,7 @@ def load_config(raw=None):
                   instructions=instructions, rules=tuple(rules), min_severity=severity,
                   min_confidence=number(review.get("min_confidence", .7), "min_confidence", 0, 1),
                   max_comments=bounded("max_comments", 12, 0, 30), structured_comments=structured,
+                  anchored_evidence=anchored,
                   verify_with=verifier, chunk_chars=chunk, max_diff_chars=budget,
                   max_context_chars=bounded("max_context_chars", 8000, 0, 30000),
                   max_batches=bounded("max_batches", 12, 1, 32),

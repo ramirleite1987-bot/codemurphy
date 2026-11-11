@@ -151,6 +151,8 @@ def make_batches(files, config: Config):
         truncated += file.incomplete
         for line in file.lines:
             cost = len(json.dumps(line.row(), ensure_ascii=False, separators=(",", ":"))) + 1
+            if config.anchored_evidence:
+                cost += 10  # Reserve room for the per-row anchor ID or null.
             if cost > config.chunk_chars:
                 continue
             if size + cost > config.chunk_chars:

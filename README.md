@@ -93,6 +93,11 @@ revisor principal. Só resultados confirmados podem ser publicados, e uma
 falha nessa etapa suspende a postagem. Nesse modo, os modelos comparados
 em paralelo ficam no relatório e não interferem na publicação. Os candidatos originais e o custo da confirmação
 aparecem separadamente no relatório e nas métricas.
+Com `review.anchored_evidence: true` (requer `structured_comments`), o modelo
+seleciona um ID do diff e linhas numeradas do contexto. O CodeMurphy resolve
+as citações a partir da entrada original, exige o comportamento antes da
+mudança e rejeita referências fora do lote. Os relatórios registram códigos
+de rejeição em `rejected_reasons`, sem guardar o texto descartado.
 Configure `json_mode: true` no modelo quando o endpoint compatível aceitar
 `response_format: json_object` (por exemplo, Ollama).
 Os relatórios indicam linhas omitidas e falhas de requisição.
