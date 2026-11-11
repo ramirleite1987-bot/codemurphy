@@ -7,7 +7,7 @@ acham problemas reais nos seus PRs, quanto custam e quanto demoram.
 - Revisa segurança, correção, escalabilidade, clareza, testes e casos de borda.
   Cada achado precisa citar uma linha alterada do diff, inclusive remoções.
 - Combina uma checagem determinística de credenciais com modelos de OpenAI,
-  Anthropic e endpoints compatíveis com Chat Completions, como Gemini e Ollama.
+  Anthropic, OpenRouter e endpoints compatíveis com Chat Completions, como Gemini e Ollama.
 - Lê contexto de arquivos escolhidos, do próprio projeto ou de outros
   repositórios, fixados em commits. Aplica regras diferentes por caminho.
 - Publica comentários inline no GitHub ou roda em modo silencioso para
@@ -132,6 +132,10 @@ exige modo de relatório, sem postagem no PR; o resumo do job omite achados
 nesses casos. Trate o JSON de revisão como código-fonte ao retê-lo. A Action
 entrega `report-path` no runner e não envia o arquivo para um serviço de
 armazenamento automaticamente.
+
+Para usar OpenRouter, veja [o perfil de exemplo](examples/openrouter.json)
+e [o guia de hospedagem e credenciais](docs/hosting.md). O workflow piloto
+é opt-in e começa em modo de observação.
 
 ## Escolher os melhores modelos
 

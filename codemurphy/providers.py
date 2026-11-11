@@ -1,4 +1,4 @@
-"""OpenAI Chat Completions compatible and Anthropic Messages providers."""
+"""OpenAI Chat Completions compatible, OpenRouter, and Anthropic Messages providers."""
 from dataclasses import dataclass
 import os
 
@@ -50,6 +50,8 @@ def call(model, system, data, timeout, *, schema=None):
             }
         elif model.json_mode:
             payload["response_format"] = {"type": "json_object"}
+        if model.provider == "openrouter":
+            payload["provider"] = {"zdr": True, "data_collection": "deny", "require_parameters": True}
         path = "/chat/completions"
     try:
         result = json_request(model.base_url + path, method="POST", headers=headers,

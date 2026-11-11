@@ -118,7 +118,8 @@ def _github(args):
                 raise
             raw = b"{}"
         config = load_config(raw.decode("utf-8"))
-        allowed_keys = {None, "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "CODEMURPHY_MODEL_API_KEY"}
+        allowed_keys = {None, "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
+                        "OPENROUTER_API_KEY", "CODEMURPHY_MODEL_API_KEY"}
         if not args.static_only and any(model.api_key_env not in allowed_keys for model in config.models):
             raise ConfigError("Base-branch config must use a supported model credential environment variable")
     else:

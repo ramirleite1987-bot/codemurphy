@@ -150,10 +150,15 @@ def _model(value):
     if not LABEL.fullmatch(identifier) or identifier in {"static", "combined", "published-primary"}:
         raise ConfigError("Invalid or reserved model.id")
     provider = m.get("provider", "openai-compatible")
-    if provider not in ("openai-compatible", "anthropic"):
-        raise ConfigError("model.provider must be openai-compatible or anthropic")
+    endpoints = {
+        "openai-compatible": ("https://api.openai.com/v1", "OPENAI_API_KEY"),
+        "anthropic": ("https://api.anthropic.com/v1", "ANTHROPIC_API_KEY"),
+        "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
+    }
+    if not isinstance(provider, str) or provider not in endpoints:
+        raise ConfigError("model.provider must be openai-compatible, anthropic or openrouter")
     anthropic = provider == "anthropic"
-    default_url = "https://api.anthropic.com/v1" if anthropic else "https://api.openai.com/v1"
+    default_url, default_key_env = endpoints[provider]
     url = string(m.get("base_url", default_url), "model.base_url", 500).rstrip("/")
     try:
         u = urlsplit(url)
@@ -165,17 +170,20 @@ def _model(value):
         _ = u.port
     except ValueError:
         raise ConfigError("model.base_url must be HTTPS (HTTP is allowed on loopback only)") from None
-    key_env = m.get("api_key_env", "ANTHROPIC_API_KEY" if anthropic else "OPENAI_API_KEY")
+    key_env = m.get("api_key_env", default_key_env)
+    if provider == "openrouter" and (url != default_url or key_env is None):
+        raise ConfigError("OpenRouter requires its official base URL and an API key environment variable")
     if key_env is not None and (not isinstance(key_env, str) or not ENV.fullmatch(key_env)):
         raise ConfigError("model.api_key_env must be an environment variable name or null")
     if key_env in ("GITHUB_TOKEN", "GH_TOKEN", "CODEMURPHY_GITHUB_TOKEN", "CODEMURPHY_CONTEXT_TOKEN"):
         raise ConfigError("GitHub credential environment variables are reserved for repository access")
     key_hosts = {"OPENAI_API_KEY": "api.openai.com", "ANTHROPIC_API_KEY": "api.anthropic.com",
-                 "GEMINI_API_KEY": "generativelanguage.googleapis.com"}
+                 "GEMINI_API_KEY": "generativelanguage.googleapis.com", "OPENROUTER_API_KEY": "openrouter.ai"}
     if key_env in key_hosts and (u.scheme != "https" or u.hostname != key_hosts[key_env] or
                                  u.port not in (None, 443)):
         raise ConfigError("Use a dedicated API key environment variable for a custom provider URL")
-    param = m.get("token_parameter", "max_completion_tokens" if url == default_url and not anthropic else "max_tokens")
+    token_default = "max_completion_tokens" if url == "https://api.openai.com/v1" else "max_tokens"
+    param = m.get("token_parameter", token_default)
     if param not in ("max_completion_tokens", "max_tokens") or anthropic and param != "max_tokens":
         raise ConfigError("Unsupported model.token_parameter")
     json_mode, json_schema = m.get("json_mode", False), m.get("json_schema", False)

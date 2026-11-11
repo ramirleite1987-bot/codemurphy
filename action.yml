@@ -13,6 +13,9 @@ inputs:
   anthropic-api-key:
     description: Anthropic credential exposed as ANTHROPIC_API_KEY.
     default: ''
+  openrouter-api-key:
+    description: OpenRouter credential exposed as OPENROUTER_API_KEY.
+    default: ''
   compatible-api-key:
     description: Custom provider credential exposed as CODEMURPHY_MODEL_API_KEY.
     default: ''
@@ -61,6 +64,7 @@ runs:
         CODEMURPHY_MODEL_API_KEY: '${{ inputs.compatible-api-key }}'
         OPENAI_API_KEY: '${{ inputs.openai-api-key }}'
         ANTHROPIC_API_KEY: '${{ inputs.anthropic-api-key }}'
+        OPENROUTER_API_KEY: '${{ inputs.openrouter-api-key }}'
         CM_PR: '${{ github.event.pull_request.number }}'
         CM_HEAD: '${{ github.event.pull_request.head.sha }}'
         CM_TRUSTED_BASE: '${{ inputs.trusted-base }}'
