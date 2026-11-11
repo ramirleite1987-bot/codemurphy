@@ -174,6 +174,19 @@ Para usar OpenRouter, veja [o perfil de exemplo](examples/openrouter.json)
 e [o guia de hospedagem e credenciais](docs/hosting.md). O workflow piloto
 é opt-in e começa em modo de observação.
 
+O modo padrão é `comment`. Para aprovar ou solicitar mudanças de acordo com
+uma revisão completa e verificada, selecione `approve-reject`. Os dois modos
+exigem publicação explícita. Veja [modos de revisão](docs/review-modes.md).
+
+## Comparar Socket e OSV offline
+
+`codemurphy dependencies` compara as versões novas ou alteradas no lockfile
+pnpm de um PR com o commit de origem. Ele confirma cada artefato no npm
+público, consulta a Socket com os identificadores autorizados e cruza os
+alertas com o OSV offline. O relatório privado distingue vulnerabilidades,
+indícios de comportamento e versões que ficaram sem cobertura. A checagem
+de dependências sempre roda em observação. Veja [instalação e uso](docs/dependency-audit.md).
+
 ## Escolher os melhores modelos
 
 ```bash

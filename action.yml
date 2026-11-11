@@ -7,6 +7,9 @@ inputs:
   github-token:
     description: Token with contents read and pull requests read (write for publication).
     default: '${{ github.token }}'
+  publisher-login:
+    description: Login for a custom GitHub App token; user tokens are identified by GitHub.
+    default: ''
   openai-api-key:
     description: OpenAI credential exposed as OPENAI_API_KEY.
     default: ''
@@ -35,8 +38,11 @@ inputs:
     description: Run the deterministic credential checks without any model calls.
     default: 'false'
   publish:
-    description: Submit a GitHub COMMENT review when the selected reviewers finish.
+    description: Submit the selected review to GitHub. Defaults to report only.
     default: 'false'
+  review-mode:
+    description: comment or approve-reject; approve-reject requires a complete, verified primary review.
+    default: comment
   publish-scope:
     description: primary posts only the main reviewer plus static checks; combined includes all reviewers.
     default: primary
@@ -72,6 +78,8 @@ runs:
         CM_MODE: '${{ inputs.mode }}'
         CM_STATIC: '${{ inputs.static-only }}'
         CM_PUBLISH: '${{ inputs.publish }}'
+        CM_REVIEW_MODE: '${{ inputs.review-mode }}'
+        CM_PUBLISHER: "${{ inputs.publisher-login || (inputs.github-token == github.token && 'github-actions[bot]') || '' }}"
         CM_SCOPE: '${{ inputs.publish-scope }}'
         CM_ALLOW_FORKS: '${{ inputs.allow-forks }}'
         CM_FAIL_ON: '${{ inputs.fail-on }}'
@@ -90,10 +98,11 @@ runs:
         report="$folder/review.json"
         args=(github "--repo=$GITHUB_REPOSITORY" "--pr=$CM_PR" "--expected-head=$CM_HEAD"
               --use-base-config "--trusted-base=$CM_TRUSTED_BASE" "--config-path=$CM_CONFIG" "--mode=$CM_MODE"
-              "--publish-scope=$CM_SCOPE" '--publisher-login=github-actions[bot]' --format=json
+              "--publish-scope=$CM_SCOPE" "--review-mode=$CM_REVIEW_MODE" --format=json
               "--output=$report" "--summary=$GITHUB_STEP_SUMMARY")
         if [[ "$CM_STATIC" == true ]]; then args+=(--static-only); fi
         if [[ "$CM_PUBLISH" == true ]]; then args+=(--publish); fi
+        if [[ -n "$CM_PUBLISHER" ]]; then args+=("--publisher-login=$CM_PUBLISHER"); fi
         if [[ "$CM_ALLOW_FORKS" == true ]]; then args+=(--allow-forks); fi
         if [[ -n "$CM_FAIL_ON" ]]; then args+=("--fail-on=$CM_FAIL_ON"); fi
         printf 'report-path=%s\n' "$report" >> "$GITHUB_OUTPUT"

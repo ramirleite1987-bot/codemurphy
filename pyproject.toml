@@ -4,11 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codemurphy"
-version = "0.3.4"
+version = "0.4.0"
 description = "Evidence-based, multi-model code review and benchmarking"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
+
+[project.optional-dependencies]
+dependency-audit = ["ruamel.yaml==0.18.17"]
 
 [project.urls]
 Repository = "https://github.com/ramirleite1987-bot/codemurphy"
@@ -18,3 +21,6 @@ codemurphy = "codemurphy.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["codemurphy*"]
+
+[tool.setuptools.package-data]
+codemurphy = ["socket_client.mjs"]
