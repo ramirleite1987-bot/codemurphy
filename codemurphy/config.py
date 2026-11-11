@@ -113,6 +113,14 @@ class Linked:
 
 
 @dataclass(frozen=True)
+class Excerpt:
+    path: str
+    anchor: str
+    lines: int
+    applies_to: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Config:
     models: tuple[Model, ...] = ()
     primary: str | None = None
@@ -137,15 +145,24 @@ class Config:
     timeout: int = 75
     files: tuple[str, ...] = ()
     linked: tuple[Linked, ...] = ()
+    excerpts: tuple[Excerpt, ...] = ()
 
     def excluded(self, path):
         return (sensitive_path(path) or
                 (bool(self.include) and not any(match_path(path, pattern) for pattern in self.include)) or
                 any(match_path(path, pattern) for pattern in self.exclude))
 
+    def matched_rules(self, paths):
+        matches = []
+        paths = sorted(set(paths))
+        for index, (patterns, text) in enumerate(self.rules, 1):
+            matching = [path for path in paths if any(match_path(path, pattern) for pattern in patterns)]
+            if matching:
+                matches.append((index, patterns, text, matching))
+        return matches
+
     def instructions_for(self, paths):
-        return tuple((patterns, text) for patterns, text in self.rules if
-                     any(match_path(path, pattern) for path in paths for pattern in patterns))
+        return tuple((patterns, text) for _, patterns, text, _ in self.matched_rules(paths))
 
 
 def _model(value):
@@ -212,6 +229,17 @@ def _paths(value):
     return tuple(dict.fromkeys(paths))
 
 
+def _excerpt(value):
+    entry = obj(value, "path anchor lines applies_to", "project excerpt")
+    path, = _paths([entry.get("path")])
+    anchor = string(entry.get("anchor"), "excerpt.anchor", 200)
+    scope = tuple(string(pattern, "excerpt path pattern", 200)
+                  for pattern in array(entry.get("applies_to", []), "excerpt.applies_to", 30))
+    if "\n" in anchor or "\r" in anchor or not scope:
+        raise ConfigError("An excerpt needs a single-line anchor and at least one target path pattern")
+    return Excerpt(path, anchor, integer(entry.get("lines"), "excerpt.lines", 1, 40), scope)
+
+
 def _linked(value):
     entry = obj(value, "id repo local commit files", "linked context")
     identifier = string(entry.get("id"), "linked.id", 64)
@@ -239,7 +267,7 @@ def load_config(raw=None):
     review = obj(raw.get("review", {}), "categories include exclude include_pr_text language instructions rules min_severity "
                  "min_confidence max_comments chunk_chars max_diff_chars max_context_chars max_batches "
                  "max_parallel timeout structured_comments anchored_evidence verify_with", "review")
-    context = obj(raw.get("context", {}), "files linked", "context")
+    context = obj(raw.get("context", {}), "files linked excerpts", "context")
     models = tuple(_model(x) for x in array(raw.get("models", []), "models", 8))
     ids = {m.id for m in models}
     primary = raw.get("primary", models[0].id if models else None)
@@ -281,8 +309,10 @@ def load_config(raw=None):
         rules.append((paths, string(rule.get("instructions"), "rule.instructions", 1500)))
     linked = tuple(_linked(x) for x in array(context.get("linked", []), "linked repos", 8))
     files = _paths(context.get("files", []))
-    if len({x.id for x in linked}) != len(linked) or len(files) + sum(len(x.files) for x in linked) > 48:
-        raise ConfigError("Use unique linked IDs and at most 48 total context files")
+    excerpts = tuple(_excerpt(x) for x in array(context.get("excerpts", []), "project excerpts", 24))
+    if (len({x.id for x in linked}) != len(linked) or
+            len(files) + len(excerpts) + sum(len(x.files) for x in linked) > 48):
+        raise ConfigError("Use unique linked IDs and at most 48 context entries")
     def bounded(key, default, low, high):
         return integer(review.get(key, default), key, low, high)
     chunk = bounded("chunk_chars", 14000, 256, 50000)
@@ -299,4 +329,4 @@ def load_config(raw=None):
                   max_context_chars=bounded("max_context_chars", 8000, 0, 30000),
                   max_batches=bounded("max_batches", 12, 1, 32),
                   max_parallel=bounded("max_parallel", 4, 1, 8),
-                  timeout=bounded("timeout", 75, 5, 300), files=files, linked=linked)
+                  timeout=bounded("timeout", 75, 5, 300), files=files, linked=linked, excerpts=excerpts)

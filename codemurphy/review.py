@@ -151,7 +151,7 @@ def reviewer_metadata(config):
 
 def config_fingerprint(config):
     data = asdict(config)
-    for field in ("models", "files", "linked"):
+    for field in ("models", "files", "linked", "excerpts"):
         del data[field]
     if not config.anchored_evidence:
         del data["anchored_evidence"]
@@ -161,12 +161,12 @@ def config_fingerprint(config):
     return _hash(data)
 
 
-def _system(config, batch):
+def _system(config, rules):
     rubric = {c: RUBRIC[c] for c in config.categories}
     policy = {"language": config.language, "rubric": rubric,
               "instructions": redact(config.instructions),
               "path_instructions": [{"paths": patterns, "instructions": redact(text)}
-                                    for patterns, text in config.instructions_for({line.path for line in batch})]}
+                                    for _, patterns, text, _ in rules]}
     system, example = (_ANCHORED_SYSTEM, _ANCHORED_EXAMPLE) if config.anchored_evidence else (_SYSTEM, _EXAMPLE)
     return (system + json.dumps({"findings": [example]}, ensure_ascii=True) +
             _POLICY + json.dumps(policy, ensure_ascii=True))
@@ -420,7 +420,7 @@ def _verify_batch(model, pack, issues, config, provider):
 def _verification(pool, model, packs, issues, config, provider):
     jobs = []
     checked = withheld = 0
-    for pack in packs:
+    for index, pack in enumerate(packs):
         anchors = pack[2]
         unique = {x["id"]: x for x in issues if (x["path"], x["side"], x["line"]) in anchors}
         if not unique:
@@ -429,12 +429,17 @@ def _verification(pool, model, packs, issues, config, provider):
                                                             -x["confidence"], x["id"]))[:12]
         checked += len(proposals)
         withheld += len(unique) - len(proposals)
-        jobs.append(pool.submit(_verify_batch, model, pack, proposals, config, provider))
-    rows = [job.result() for job in jobs]
+        jobs.append((index, pool.submit(_verify_batch, model, pack, proposals, config, provider)))
+    completed = {index: job.result() for index, job in jobs}
+    rows = list(completed.values())
     _, stats = _aggregate(model, rows)
     ids = sorted({x["id"] for row in rows for x in row[0]})
-    return {**stats, "reviewer": model.id, "checked": checked, "confirmed": len(ids),
-            "confirmed_ids": ids, "withheld": withheld}
+    return ({**stats, "reviewer": model.id, "checked": checked, "confirmed": len(ids),
+             "confirmed_ids": ids, "withheld": withheld}, completed)
+
+
+def _request_status(row):
+    return "completed" if row[4] is None else "failed"
 
 
 def run_review(config, files, refs=(), *, mode="primary", static_only=False, provider=call,
@@ -443,8 +448,9 @@ def run_review(config, files, refs=(), *, mode="primary", static_only=False, pro
     batches, coverage = make_batches(files, config)
     used_refs = set()
     packs = []
+    context_trace = []
     models = [] if static_only else [m for m in config.models if mode == "compare" or m.id == config.primary]
-    for batch in batches:
+    for batch_number, batch in enumerate(batches, 1):
         if not models:
             break
         anchors = {(x.path, x.side, x.number): x for x in batch if x.changed and x.text.strip()}
@@ -452,6 +458,8 @@ def run_review(config, files, refs=(), *, mode="primary", static_only=False, pro
             continue
         relevant = select_refs(refs, batch, config.max_context_chars, numbered=config.anchored_evidence)
         used_refs.update(x.id for x in relevant)
+        paths = sorted({line.path for line in batch})
+        rules = config.matched_rules(paths)
         rows = [line.row() for line in batch]
         by_id = {}
         if config.anchored_evidence:
@@ -462,8 +470,18 @@ def run_review(config, files, refs=(), *, mode="primary", static_only=False, pro
         data = {"diff": rows, "context": [x.payload(numbered=config.anchored_evidence) for x in relevant]}
         if config.include_pr_text and pr_text:
             data["pr"] = redact(pr_text)[:3000]
-        packs.append((_system(config, batch), json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+        packs.append((_system(config, rules), json.dumps(data, ensure_ascii=False, separators=(",", ":")),
                       anchors, {x.id: x for x in relevant}, by_id))
+        context_trace.append({
+            "batch": batch_number, "diff_paths": paths,
+            "references": [{"id": ref.id, "repo": ref.repo, "commit": ref.commit, "path": ref.path,
+                            "start_line": ref.start_line, "end_line": ref.start_line + ref.text.count("\n")}
+                           for ref in relevant],
+            "global_instructions": bool(config.instructions),
+            "rules": [{"index": index, "patterns": [redact(pattern) for pattern in patterns],
+                       "matched_paths": matching} for index, patterns, _, matching in rules],
+            "reviewers": {},
+        })
     results = {"static": _static(batches, config)}
     stats = {}
     verification = None
@@ -477,10 +495,15 @@ def run_review(config, files, refs=(), *, mode="primary", static_only=False, pro
             per_model = {m.id: [job.result() for job in jobs[m.id]] for m in models}
             for model in models:
                 results[model.id], stats[model.id] = _aggregate(model, per_model[model.id])
+                for item, row in zip(context_trace, per_model[model.id], strict=True):
+                    item["reviewers"][model.id] = _request_status(row)
             if config.verify_with:
                 verifier = next(m for m in config.models if m.id == config.verify_with)
                 # Shadow models cannot change the primary's verification budget or verdict.
-                verification = _verification(pool, verifier, packs, results[config.primary], config, provider)
+                verification, verifier_rows = _verification(
+                    pool, verifier, packs, results[config.primary], config, provider)
+                for index, row in verifier_rows.items():
+                    context_trace[index]["verifier"] = {"model": verifier.id, "status": _request_status(row)}
     proposed = (results["static"] + results[config.primary] if verification is not None else
                 [item for issues in results.values() for item in issues])
     findings = merge_findings(_confirmed(proposed, verification))
@@ -493,4 +516,5 @@ def run_review(config, files, refs=(), *, mode="primary", static_only=False, pro
             "verification": verification, "language": config.language,
             "private_context": any(r.private for r in refs),
             "context_available": len(refs), "context_used": len(used_refs), "warnings": list(warnings),
+            "context_trace": context_trace,
             "wall_ms": round((time.perf_counter() - started) * 1000, 1)}

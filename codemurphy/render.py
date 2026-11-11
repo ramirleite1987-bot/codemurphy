@@ -44,7 +44,7 @@ def markdown(report, *, summary=False, issues=None):
     lines += ["", f"Reviewed {cov['reviewed_lines']}/{cov['eligible_lines']} eligible changed lines "
               f"across {cov['files']} changed files; {cov['excluded_files']} excluded files, "
               f"{cov['unreviewable_files']} files without text hunks.",
-              f"Context: {report['context_used']}/{report['context_available']} files used.",
+              f"Context: {report['context_used']}/{report['context_available']} references selected.",
               f"Run: `{report['run_id']}`"]
     if cov["partial"]:
         lines.append("**Partial diff:** Some changes could not be reviewed.")

@@ -1,11 +1,13 @@
 from pathlib import Path
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 from codemurphy.config import load_config, ConfigError
 from codemurphy.diff import from_unified, parse_patch, make_batches
 from codemurphy.context import local_refs, select_refs
+from codemurphy.github import github_refs
 from codemurphy.redact import redact
 
 
@@ -71,6 +73,45 @@ class InputsTests(unittest.TestCase):
             self.assertEqual(ranked[0].path, "api.md")
             self.assertEqual(ranked[0].commit, commit)
             self.assertEqual(ranked[0].text, "BillingClient invoice schema")
+
+    def test_explicit_excerpt_is_pinned_and_only_used_on_matching_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+
+            def git(*args):
+                return subprocess.check_output(["git", "-C", temp, *args], text=True).strip()
+
+            git("init", "-q")
+            raw = b"unrelated\ndef verify_payment():\n    return cached_result\nother code\n"
+            (root / "payment.py").write_bytes(raw)
+            (root / "README.md").write_text("retry payment charge")
+            git("add", ".")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "base")
+            base = git("rev-parse", "HEAD")
+            (root / "payment.py").write_text("uncommitted content")
+            cfg = load_config({"context": {"files": ["README.md"], "excerpts": [{
+                "path": "payment.py", "anchor": "def verify_payment(", "lines": 2, "applies_to": ["src/billing/**"],
+            }, {
+                "path": "payment.py", "anchor": "uncommitted content", "lines": 1, "applies_to": ["src/billing/**"],
+            }]}})
+            refs, warnings = local_refs(cfg, root, base)
+            self.assertEqual(len(warnings), 1)
+            patch = "@@ -0,0 +1 @@\n+retry_payment_charge()"
+            relevant = select_refs(refs, parse_patch("src/billing/job.py", patch).lines, 1000)
+            self.assertEqual((relevant[0].path, relevant[0].start_line, relevant[0].text),
+                             ("payment.py", 2, "def verify_payment():\n    return cached_result"))
+            unrelated = select_refs(refs, parse_patch("src/views/job.py", patch).lines, 1000)
+            self.assertEqual([ref.path for ref in unrelated], ["README.md"])
+            pull = SimpleNamespace(repo="owner/project", base=base)
+
+            def blob(repo, commit, path):
+                self.assertEqual((repo, commit), ("owner/project", base))
+                return raw if path == "payment.py" else b"retry payment charge"
+
+            hosted, warnings = github_refs(SimpleNamespace(blob=blob), None, pull, cfg)
+            self.assertEqual(len(warnings), 1)
+            self.assertEqual([(ref.path, ref.start_line, ref.text) for ref in hosted],
+                             [(ref.path, ref.start_line, ref.text) for ref in refs])
 
     def test_secret_patterns_are_removed(self):
         token = "ghp_" + "Aa01" * 9

@@ -81,6 +81,42 @@ class CommentQualityTests(unittest.TestCase):
                          {"diff_quote_mismatch": 1, "context_quote_mismatch": 1, "too_long_trigger": 1})
         self.assertNotIn("synthetic raw text that must not be retained", json.dumps(report))
 
+    def test_context_trace_records_the_same_references_and_rules_used_by_both_reviewers(self):
+        cfg, files, refs, issue = self.setup_review(verify_with="critic")
+        cfg = replace(cfg, instructions="Global project policy.", rules=(
+            (("tests/**",), "This rule does not apply."),
+            (("src/**",), "Check that import retries are idempotent."),
+        ))
+        refs += [Reference("project:2", "project", "a" * 40, "docs/large.md", "x" * 10000)]
+        calls = []
+
+        def provider(model, system, data, timeout):
+            payload = json.loads(data)
+            policy = json.loads(system.rsplit("\nTrusted project policy:\n", 1)[1])
+            self.assertEqual(policy["path_instructions"], [{
+                "paths": ["src/**"], "instructions": "Check that import retries are idempotent.",
+            }])
+            calls.append(payload.get("input", payload)["context"])
+            if model.id == "primary":
+                return Reply(json.dumps({"findings": [issue]}), 50, 30)
+            [candidate] = payload["candidates"]
+            return Reply(json.dumps({"confirmed": [{"id": candidate["id"], "quote": "persist(row)"}]}), 55, 10)
+
+        report = run_review(cfg, files, refs, provider=provider)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0], calls[1])
+        self.assertEqual(report.get("context_trace"), [{
+            "batch": 1,
+            "diff_paths": ["src/import.py"],
+            "references": [{"id": "project:1", "repo": "project", "commit": "a" * 40,
+                            "path": "docs/import.md", "start_line": 1, "end_line": 1}],
+            "global_instructions": True,
+            "rules": [{"index": 2, "patterns": ["src/**"], "matched_paths": ["src/import.py"]}],
+            "reviewers": {"primary": "completed"},
+            "verifier": {"model": "critic", "status": "completed"},
+        }])
+        self.assertEqual(run_review(cfg, files, refs, static_only=True)["context_trace"], [])
+
     def test_only_confirmed_findings_reach_publication_and_critics_see_context(self):
         cfg, files, refs, issue = self.setup_review(verify_with="critic")
         def provider(model, system, data, timeout):

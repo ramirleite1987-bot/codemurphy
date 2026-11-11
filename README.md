@@ -80,6 +80,38 @@ trechos relevantes por lote e verifica as citações retornadas pelo modelo.
 Contexto opcional do próprio projeto ausente gera aviso; arquivos
 explicitamente ligados devem estar acessíveis.
 
+Para enviar um trecho específico do commit base, use `context.excerpts`.
+O exemplo abaixo inclui até 15 linhas, a partir de uma âncora única no
+arquivo, quando o lote tiver mudanças em um caminho correspondente:
+
+```json
+{
+  "path": "src/net/safe_url.py",
+  "anchor": "def parse_public_url(",
+  "lines": 15,
+  "applies_to": ["src/net/**", "tests/test_redirects.py"]
+}
+```
+
+Os trechos explícitos têm prioridade sobre a seleção por relevância, dentro
+de `review.max_context_chars`. A âncora é procurada no commit base; se não
+existir ou aparecer mais de uma vez, o relatório inclui um aviso e o trecho
+fica de fora. Use `context.files` para contratos gerais e
+`review.rules[].instructions` para dizer o que conferir.
+
+Para auditar a entrada, gere um relatório com `--format json --output review.json`
+e examine `context_trace`:
+
+```sh
+jq '.context_trace[] | {batch, diff_paths, references, rules, reviewers, verifier}' review.json
+```
+
+Cada lote lista os arquivos e intervalos selecionados, o commit, os índices
+de `review.rules` (a partir de 1), os caminhos que casaram com as regras e o
+estado das chamadas. A lista mostra o que foi incluído na entrada, sem copiar
+o texto dos trechos. Para ver o que o modelo citou num achado, consulte
+`findings[].citations`. A checagem estática não monta entrada de modelo.
+
 Use `review.rules` para instruções por caminho, `review.exclude` para
 arquivos gerados e `review.categories` para ajustar o escopo. `*` casa
 dentro de um segmento; `**` atravessa diretórios. Ajuste

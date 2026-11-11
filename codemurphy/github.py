@@ -3,7 +3,7 @@ import base64
 from dataclasses import dataclass
 
 from .config import SHA, repo_name, safe_path, sensitive_path
-from .context import MAX_CONTEXT_BYTES, reference
+from .context import MAX_CONTEXT_BYTES, project_excerpts, reference
 from .diff import parse_patch
 from .http import RequestError, json_request
 from .render import comment, markdown
@@ -184,6 +184,16 @@ def github_refs(api, context_api, pull, config):
             warnings.append(f"Project context missing at the base commit: {path}")
             continue
         refs.append(reference(f"project:{i}", pull.repo, pull.base, path, raw))
+    def read_blob(path):
+        try:
+            return api.blob(pull.repo, pull.base, path)
+        except GitHubError as exc:
+            if exc.status != 404:
+                raise
+            return None
+    excerpts, excerpt_warnings = project_excerpts(config, pull.repo, pull.base, read_blob)
+    refs.extend(excerpts)
+    warnings.extend(excerpt_warnings)
     for linked in config.linked:
         if linked.local:
             raise GitHubError("Local linked repositories are unavailable in GitHub reviews")

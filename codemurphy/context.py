@@ -4,6 +4,7 @@ import json
 import re
 from pathlib import Path
 
+from .config import match_path
 from .gitlocal import GitError, blob_at, commit_at
 from .redact import redact
 
@@ -19,6 +20,7 @@ class Reference:
     text: str
     private: bool = False
     start_line: int = 1
+    applies_to: tuple[str, ...] = ()
 
     def payload(self, *, numbered=False):
         origin = {"id": self.id, "repo": self.repo, "commit": self.commit, "path": self.path}
@@ -37,6 +39,28 @@ def reference(identifier, repo, commit, path, blob, private=False):
     return Reference(identifier, redact(repo), commit, redact(path), redact(value), private)
 
 
+def project_excerpts(config, repo, base, read_blob):
+    refs, warnings, blobs = [], [], {}
+    for i, excerpt in enumerate(config.excerpts, 1):
+        path = excerpt.path
+        if path not in blobs:
+            blobs[path] = read_blob(path)
+        raw = blobs[path]
+        if raw is None:
+            warnings.append(f"Project excerpt file unavailable at the base commit: {redact(path)} (excerpt {i})")
+            continue
+        ref = reference(f"project:excerpt:{i:02d}", repo, base, path, raw)
+        lines = ref.text.split("\n")
+        hits = [j for j, line in enumerate(lines) if excerpt.anchor in line]
+        if len(hits) != 1:
+            warnings.append(f"Project excerpt anchor missing or ambiguous: {ref.path} (excerpt {i})")
+            continue
+        start = hits[0]
+        refs.append(replace(ref, start_line=start + 1, text="\n".join(lines[start:start + excerpt.lines]),
+                            applies_to=excerpt.applies_to))
+    return refs, warnings
+
+
 def local_refs(config, root, base, remote=None):
     refs, warnings = [], []
     for i, path in enumerate(config.files, 1):
@@ -44,6 +68,14 @@ def local_refs(config, root, base, remote=None):
             refs.append(reference(f"project:{i}", "project", base, path, blob_at(root, base, path)))
         except GitError:
             warnings.append(f"Project context unavailable: {redact(path)}")
+    def read_blob(path):
+        try:
+            return blob_at(root, base, path)
+        except GitError:
+            return None
+    excerpts, excerpt_warnings = project_excerpts(config, "project", base, read_blob)
+    refs.extend(excerpts)
+    warnings.extend(excerpt_warnings)
     for item in config.linked:
         if item.repo:
             if remote is None:
@@ -69,15 +101,20 @@ def _terms(text):
 def select_refs(refs, batch, budget, *, numbered=False):
     terms = _terms(" ".join(f"{line.path} {line.text}" for line in batch if line.changed))
     candidates = []
+    paths = {line.path for line in batch}
     for ref in refs:
+        if ref.applies_to:
+            if any(match_path(path, pattern) for path in paths for pattern in ref.applies_to):
+                candidates.append((1, 0, ref.id, 0, ref))
+            continue
         # Preserve source line numbers while allowing a focused excerpt from long contracts.
         lines = ref.text.split("\n")
         for start in range(0, len(lines), 32):
             snippet = "\n".join(lines[start:start+40])
             score = 3 * len(terms & _terms(ref.path)) + len(terms & _terms(snippet))
-            candidates.append((score, ref.id, start, replace(ref, start_line=ref.start_line + start, text=snippet)))
+            candidates.append((0, score, ref.id, start, replace(ref, start_line=ref.start_line + start, text=snippet)))
     picked, used = [], set()
-    for _, _, _, ref in sorted(candidates, key=lambda x: (-x[0], x[1], x[2])):
+    for _, _, _, _, ref in sorted(candidates, key=lambda x: (-x[0], -x[1], x[2], x[3])):
         if ref.id in used:
             continue
         cost = len(json.dumps(ref.payload(numbered=numbered), ensure_ascii=False, separators=(",", ":"))) + 1
