@@ -98,6 +98,8 @@ class Model:
     output_usd_per_million: float | None
     max_output_tokens: int
     token_parameter: str
+    json_mode: bool
+    temperature: float | None
 
 
 @dataclass(frozen=True)
@@ -121,6 +123,8 @@ class Config:
     min_severity: str = "medium"
     min_confidence: float = 0.70
     max_comments: int = 12
+    structured_comments: bool = False
+    verify_with: str | None = None
     chunk_chars: int = 14000
     max_diff_chars: int = 80000
     max_context_chars: int = 8000
@@ -140,7 +144,7 @@ class Config:
 
 def _model(value):
     m = obj(value, "id provider model base_url api_key_env input_usd_per_million "
-                   "output_usd_per_million max_output_tokens token_parameter", "model")
+                   "output_usd_per_million max_output_tokens token_parameter json_mode temperature", "model")
     identifier = string(m.get("id"), "model.id", 64)
     if not LABEL.fullmatch(identifier) or identifier in {"static", "combined", "published-primary"}:
         raise ConfigError("Invalid or reserved model.id")
@@ -173,13 +177,18 @@ def _model(value):
     param = m.get("token_parameter", "max_completion_tokens" if url == default_url and not anthropic else "max_tokens")
     if param not in ("max_completion_tokens", "max_tokens") or anthropic and param != "max_tokens":
         raise ConfigError("Unsupported model.token_parameter")
+    json_mode = m.get("json_mode", False)
+    if type(json_mode) is not bool or anthropic and json_mode:
+        raise ConfigError("model.json_mode is a boolean and requires an OpenAI-compatible endpoint")
+    temperature = (number(m["temperature"], "model.temperature", 0, 1 if anthropic else 2)
+                   if "temperature" in m else None)
     prices = []
     for name in ("input_usd_per_million", "output_usd_per_million"):
         prices.append(number(m[name], f"model.{name}", 0, 1_000_000) if name in m else None)
     if (prices[0] is None) != (prices[1] is None):
         raise ConfigError("Set both per-million prices or leave both unset")
     return Model(identifier, provider, string(m.get("model"), "model.model", 180), url,
-                 key_env, *prices, integer(m.get("max_output_tokens", 2400), "max_output_tokens", 256, 16000), param)
+                 key_env, *prices, integer(m.get("max_output_tokens", 2400), "max_output_tokens", 256, 16000), param, json_mode, temperature)
 
 
 def _paths(value):
@@ -215,13 +224,23 @@ def load_config(raw=None):
     obj(raw, "models primary review context", "config")
     review = obj(raw.get("review", {}), "categories exclude language instructions rules min_severity "
                  "min_confidence max_comments chunk_chars max_diff_chars max_context_chars max_batches "
-                 "max_parallel timeout", "review")
+                 "max_parallel timeout structured_comments verify_with", "review")
     context = obj(raw.get("context", {}), "files linked", "context")
     models = tuple(_model(x) for x in array(raw.get("models", []), "models", 8))
     ids = {m.id for m in models}
     primary = raw.get("primary", models[0].id if models else None)
     if len(ids) != len(models) or (models and (not isinstance(primary, str) or primary not in ids)) or (not models and primary is not None):
         raise ConfigError("Use unique model IDs and select a configured primary model")
+    structured = review.get("structured_comments", False)
+    verifier = review.get("verify_with")
+    if type(structured) is not bool:
+        raise ConfigError("review.structured_comments must be a boolean")
+    if verifier is not None:
+        if not isinstance(verifier, str) or verifier not in ids:
+            raise ConfigError("review.verify_with must be a configured model ID or null")
+        by_id = {m.id: m for m in models}
+        if by_id[primary].model.casefold() == by_id[verifier].model.casefold():
+            raise ConfigError("review.verify_with must use a different model from the primary")
     categories = tuple(array(review.get("categories", list(RUBRIC)), "categories", len(RUBRIC)))
     if not categories or any(not isinstance(c, str) or c not in RUBRIC for c in categories) or len(set(categories)) != len(categories):
         raise ConfigError("Review categories must be distinct rubric keys")
@@ -253,7 +272,8 @@ def load_config(raw=None):
                   language=string(review.get("language", "English"), "language", 48),
                   instructions=instructions, rules=tuple(rules), min_severity=severity,
                   min_confidence=number(review.get("min_confidence", .7), "min_confidence", 0, 1),
-                  max_comments=bounded("max_comments", 12, 0, 30), chunk_chars=chunk, max_diff_chars=budget,
+                  max_comments=bounded("max_comments", 12, 0, 30), structured_comments=structured,
+                  verify_with=verifier, chunk_chars=chunk, max_diff_chars=budget,
                   max_context_chars=bounded("max_context_chars", 8000, 0, 30000),
                   max_batches=bounded("max_batches", 12, 1, 32),
                   max_parallel=bounded("max_parallel", 4, 1, 8),

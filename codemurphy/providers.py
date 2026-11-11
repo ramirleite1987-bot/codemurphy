@@ -28,6 +28,8 @@ def call(model, system, data, timeout):
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     payload = {"model": model.model, model.token_parameter: model.max_output_tokens,
                "messages": [{"role": "user", "content": data}]}
+    if model.temperature is not None:
+        payload["temperature"] = model.temperature
     anthropic = model.provider == "anthropic"
     if anthropic:
         headers["anthropic-version"] = "2023-06-01"
@@ -39,6 +41,8 @@ def call(model, system, data, timeout):
         if key:
             headers["Authorization"] = "Bearer " + key
         payload["messages"].insert(0, {"role": "system", "content": system})
+        if model.json_mode:
+            payload["response_format"] = {"type": "json_object"}
         path = "/chat/completions"
     try:
         result = json_request(model.base_url + path, method="POST", headers=headers,

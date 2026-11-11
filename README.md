@@ -86,6 +86,15 @@ dentro de um segmento; `**` atravessa diretórios. Ajuste
 `min_severity`, `min_confidence`, `max_comments`, `max_parallel` e os
 orçamentos `chunk_chars`, `max_diff_chars`, `max_context_chars` e `max_batches`.
 A confiança é declarada pelo modelo; calibre o limiar com casos rotulados.
+Use `review.structured_comments: true` para exigir gatilho, impacto, correção
+e uma forma de verificar cada achado. Com `review.verify_with`, outro
+modelo recebe o mesmo diff e contexto para contestar os achados do
+revisor principal. Só resultados confirmados podem ser publicados, e uma
+falha nessa etapa suspende a postagem. Nesse modo, os modelos comparados
+em paralelo ficam no relatório e não interferem na publicação. Os candidatos originais e o custo da confirmação
+aparecem separadamente no relatório e nas métricas.
+Configure `json_mode: true` no modelo quando o endpoint compatível aceitar
+`response_format: json_object` (por exemplo, Ollama).
 Os relatórios indicam linhas omitidas e falhas de requisição.
 
 ## GitHub Actions
@@ -110,7 +119,8 @@ publicados. `publish-scope: combined` é opt-in.
 
 Os comentários são limitados e verificados contra a revisão atual do PR.
 A publicação é suspensa se o diff ou o revisor selecionado ficou incompleto.
-O padrão não bloqueia por severidade; `--fail-on high` ou o input `fail-on`
+No CLI, `github --publish --only-findings` evita a postagem quando não há
+achados publicáveis. O padrão não bloqueia por severidade; `--fail-on high` ou o input `fail-on`
 habilitam essa política. Códigos de saída: `0` concluído/ignorado pelo
 filtro, `1` achado atingiu o limiar, `2` revisão incompleta ou erro operacional.
 

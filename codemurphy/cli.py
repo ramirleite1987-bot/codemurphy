@@ -11,7 +11,8 @@ from .benchmark import BenchmarkError, evaluate, load_suite, read_json
 from .config import ConfigError, SEVERITIES, SHA, load_config
 from .context import local_refs
 from .diff import from_unified
-from .github import GitHub, GitHubError, Skipped, github_refs, publish, snapshot
+from .github import (GitHub, GitHubError, Skipped, already_reviewed, github_refs,
+                     publish, review_publisher, snapshot)
 from .gitlocal import GitError, blob_at, root_of, snapshot as git_snapshot
 from .history import VERDICTS, feedback, metrics, record
 from .redact import redact
@@ -52,7 +53,8 @@ def _review_token():
 
 
 def _status(report, threshold, model_ids, findings):
-    if report["coverage"]["partial"] or any(report["models"][m]["failed_requests"] for m in model_ids):
+    if (report["coverage"]["partial"] or any(report["models"][m]["failed_requests"] for m in model_ids) or
+            (report.get("verification") or {}).get("failed_requests", 0)):
         return 2
     if threshold and any(SEVERITIES.index(f["severity"]) >= SEVERITIES.index(threshold) for f in findings):
         return 1
@@ -81,6 +83,8 @@ def _local(args):
 
 
 def _github(args):
+    if args.only_findings and not args.publish:
+        raise ConfigError("--only-findings requires --publish")
     if args.use_base_config and not args.trusted_base:
         raise ConfigError("--use-base-config on GitHub requires --trusted-base BRANCH")
     if not (args.static_only or args.config or args.use_base_config):
@@ -88,15 +92,22 @@ def _github(args):
     token = _review_token()
     if args.publish and not token:
         raise ConfigError("Publishing requires CODEMURPHY_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN")
-    if args.expected_head is not None and not SHA.fullmatch(args.expected_head):
-        raise ConfigError("--expected-head must be a commit SHA")
+    for field, value in (("--expected-head", args.expected_head), ("--expected-base", args.expected_base)):
+        if value is not None and not SHA.fullmatch(value):
+            raise ConfigError(f"{field} must be a commit SHA")
     api = GitHub(token)
     try:
         pr = snapshot(api, args.repo, args.pr, expected_head=args.expected_head,
-                      trusted_base=args.trusted_base, allow_forks=args.allow_forks)
+                      expected_base=args.expected_base, trusted_base=args.trusted_base, allow_forks=args.allow_forks)
     except Skipped as exc:
         _emit({"schema": 1, "skipped": str(exc)}, args)
         return 0
+    publisher = None
+    if args.publish:
+        publisher = review_publisher(api, args.publisher_login)
+        if not args.fail_on and already_reviewed(api, pr, publisher):
+            _emit({"schema": 1, "skipped": "This publisher already reviewed the exact base and head"}, args)
+            return 0
     if args.config:
         config = load_config(read_json(args.config, _CONFIG_LIMIT))
     elif args.use_base_config:
@@ -113,6 +124,8 @@ def _github(args):
     else:
         config = load_config()
     _requires_models(config, args)
+    if args.publish and not args.static_only and config.verify_with and args.publish_scope != "primary":
+        raise ConfigError("Verified publication requires --publish-scope primary; compare mode still reports shadow models")
     refs, warnings = ((), ()) if args.static_only else github_refs(
         api, GitHub(os.getenv("CODEMURPHY_CONTEXT_TOKEN") or token), pr, config)
     if args.publish and any(r.private for r in refs):
@@ -127,9 +140,11 @@ def _github(args):
     if args.publish:
         if code == 2:
             report["publication"] = "withheld because review coverage was incomplete"
+        elif args.only_findings and (not findings or not config.max_comments):
+            report["publication"] = "skipped because there are no publishable findings"
         else:
             try:
-                report["publication"] = publish(api, pr, report, config, publisher=args.publisher_login,
+                report["publication"] = publish(api, pr, report, config, publisher=publisher,
                                                 scope=args.publish_scope)
             except GitHubError as exc:
                 code = 2
@@ -207,6 +222,7 @@ def build_parser():
     remote.add_argument("--repo", required=True)
     remote.add_argument("--pr", required=True, type=int)
     remote.add_argument("--expected-head")
+    remote.add_argument("--expected-base")
     remote.add_argument("--trusted-base")
     remote.add_argument("--allow-forks", action="store_true")
     remote_cfg = remote.add_mutually_exclusive_group()
@@ -215,6 +231,8 @@ def build_parser():
                             help="Trust remote configuration at --trusted-base")
     remote.add_argument("--config-path", default=".codemurphy.json", help="Path at the PR base commit")
     remote.add_argument("--publish", action="store_true")
+    remote.add_argument("--only-findings", action="store_true",
+                        help="Skip the GitHub review when there are no publishable findings")
     remote.add_argument("--publish-scope", choices=("primary", "combined"), default="primary")
     remote.add_argument("--publisher-login", help="Bot identity for review deduplication; defaults to GET /user")
     remote.add_argument("--summary", help="Append a redacted summary to this file")

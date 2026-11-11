@@ -139,10 +139,16 @@ class ProviderTests(unittest.TestCase):
         for name, (path, response) in payloads.items():
             with self.subTest(name=name), self.endpoint(response) as (url, seen):
                 model = load_config({"models": [{"id": "a", "provider": name,
-                                    "model": "fake", "api_key_env": None, "base_url": url}]}).models[0]
+                                    "model": "fake", "api_key_env": None, "base_url": url,
+                                    "json_mode": name == "openai-compatible", "temperature": 0}]}).models[0]
                 self.assertEqual(call(model, "system", "input", 5), Reply("{}", 90, 10))
                 self.assertEqual(seen[0][0], path)
                 self.assertEqual(seen[0][1]["messages"][-1]["content"], "input")
+                self.assertEqual(seen[0][1]["temperature"], 0)
+                if name == "openai-compatible":
+                    self.assertEqual(seen[0][1]["response_format"], {"type": "json_object"})
+                else:
+                    self.assertNotIn("response_format", seen[0][1])
 
     def test_redirects_and_error_response_bodies_are_not_followed_or_logged(self):
         with self.endpoint({"error": "private-error"}, 307, "http://127.0.0.1:1") as (url, _):

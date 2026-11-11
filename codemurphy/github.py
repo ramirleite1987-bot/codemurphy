@@ -118,7 +118,7 @@ def _identity(metadata):
         raise GitHubError("Invalid GitHub PR commit metadata") from None
 
 
-def snapshot(api, repo, number, *, expected_head=None, trusted_base=None, allow_forks=False):
+def snapshot(api, repo, number, *, expected_head=None, expected_base=None, trusted_base=None, allow_forks=False):
     if not repo_name(repo) or type(number) is not int or not 1 <= number <= 10**9:
         raise GitHubError("GitHub review requires owner/repo and a positive PR number")
     endpoint = f"/repos/{repo}/pulls/{number}"
@@ -129,6 +129,8 @@ def snapshot(api, repo, number, *, expected_head=None, trusted_base=None, allow_
             raise Skipped("PR is closed")
         if expected_head is not None and head != expected_head:
             raise Skipped("Event was superseded by a newer PR head")
+        if expected_base is not None and base != expected_base:
+            raise Skipped("The selected PR base commit changed")
         if metadata["base"]["repo"]["full_name"].casefold() != repo.casefold():
             raise GitHubError("PR base repository does not match the requested repository")
         if trusted_base is not None and metadata["base"]["ref"] != trusted_base:
@@ -195,28 +197,39 @@ def _verify(api, pull):
         raise GitHubError("PR changed before publication; no review was posted")
 
 
-def publish(api, pull, report, config, *, publisher=None, scope="primary"):
-    if report["private_context"]:
-        raise GitHubError("Private linked context cannot be published to GitHub")
-    _verify(api, pull)
+def review_publisher(api, publisher=None):
     if publisher is None:
         publisher = api.request("/user").get("login")
     if not isinstance(publisher, str) or not publisher:
         raise GitHubError("Cannot identify the GitHub review publisher")
+    return publisher
+
+
+def already_reviewed(api, pull, publisher):
     for page in range(1, 11):
         reviews = api.request(f"{pull.endpoint}/reviews?per_page=100&page={page}")
         if not isinstance(reviews, list):
             raise GitHubError("Invalid GitHub review list")
         if any((r.get("user") or {}).get("login", "").casefold() == publisher.casefold() and
                pull.marker in (r.get("body") or "").splitlines() for r in reviews):
-            return "already-posted"
+            return True
         if len(reviews) < 100:
-            break
-    else:
-        raise GitHubError("Too many existing reviews to deduplicate safely")
+            return False
+    raise GitHubError("Too many existing reviews to deduplicate safely")
+
+
+def publish(api, pull, report, config, *, publisher=None, scope="primary"):
+    if report["private_context"]:
+        raise GitHubError("Private linked context cannot be published to GitHub")
+    if (report.get("verification") or {}).get("failed_requests"):
+        raise GitHubError("An incomplete second review cannot be published")
+    _verify(api, pull)
+    publisher = review_publisher(api, publisher)
+    if already_reviewed(api, pull, publisher):
+        return "already-posted"
     findings = publication_findings(report, scope)
     known = {(x.path, x.side, x.number) for file in pull.files for x in file.lines if x.changed}
-    comments = [{"path": i["path"], "line": i["line"], "side": i["side"], "body": comment(i)}
+    comments = [{"path": i["path"], "line": i["line"], "side": i["side"], "body": comment(i, language=config.language)}
                 for i in findings[:config.max_comments] if (i["path"], i["side"], i["line"]) in known]
     body = markdown(report, summary=True, issues=findings)
     if len(findings) > len(comments):

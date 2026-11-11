@@ -2,7 +2,8 @@
 import http.client
 import json
 from urllib.error import HTTPError, URLError
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 
 class RequestError(RuntimeError):
@@ -20,7 +21,10 @@ def json_request(url, *, headers=None, method="GET", body=None, timeout=30, limi
     req = Request(url, method=method, headers=headers or {},
                   data=None if body is None else json.dumps(body, ensure_ascii=True, allow_nan=False).encode())
     try:
-        with build_opener(NoRedirect()).open(req, timeout=timeout) as resp:
+        handlers = [NoRedirect()]
+        if urlsplit(url).hostname in ("127.0.0.1", "::1", "localhost"):
+            handlers.append(ProxyHandler({}))
+        with build_opener(*handlers).open(req, timeout=timeout) as resp:
             raw = resp.read(limit + 1)
     except HTTPError as exc:
         exc.close()

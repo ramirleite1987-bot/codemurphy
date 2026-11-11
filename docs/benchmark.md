@@ -74,7 +74,9 @@ linhas não cobertas e métricas sobre os próprios casos de cada revisor e
 sobre a interseção. `static` mede somente a checagem determinística; cada
 ID de modelo mede o modelo isolado; `combined` mede a união deduplicada. `published-primary` aplica
 o mesmo escopo e limite de comentários da publicação padrão. Use essa linha
-quando o baseline contiver comentários efetivamente publicados.
+quando o baseline contiver comentários efetivamente publicados. Com segunda revisão,
+a linha de união combinada é omitida: o verificador avalia apenas os achados
+do modelo principal; as pontuações individuais continuam disponíveis.
 Sem candidatos/achados suficientes para calcular uma taxa, o resultado é
 `null`. A latência de um modelo durante a comparação inclui a concorrência
 na execução; use um único modelo por rodada para estimar tempo isolado.

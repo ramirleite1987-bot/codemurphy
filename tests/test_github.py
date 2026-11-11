@@ -1,4 +1,9 @@
+from contextlib import redirect_stdout
+from io import StringIO
 from unittest import TestCase
+from unittest.mock import patch
+
+from codemurphy.cli import main
 
 from codemurphy.config import load_config
 from codemurphy.github import GitHub, GitHubError, Skipped, publish, snapshot
@@ -104,3 +109,23 @@ class GitHubTests(TestCase):
         pr = snapshot(api, REPO, 5)
         report = run_review(load_config(), pr.files, static_only=True)
         self.assertEqual(report["coverage"]["excluded_files"], 1)
+
+    def test_expected_base_mismatch_does_not_read_diff(self):
+        api = FakeGitHub({PREFIX: pull()})
+        with self.assertRaisesRegex(Skipped, "base commit changed"):
+            snapshot(api, REPO, 5, expected_base="d"*40)
+        self.assertEqual(api.calls, [(PREFIX, None)])
+
+    def test_duplicate_review_cannot_bypass_severity_gate(self):
+        entry = changed("settings.py")
+        entry["patch"] = '@@ -0,0 +1 @@\n+CLIENT_SECRET = "synthetic_credential_for_gate_fixture"'
+        api = FakeGitHub({PREFIX: pull(), PREFIX + "/files?per_page=100&page=1": [entry]})
+        pr = snapshot(api, REPO, 5)
+        api.responses[PREFIX + "/reviews?per_page=100&page=1"] = [
+            {"user": {"login": "github-actions[bot]"}, "body": pr.marker}]
+        with patch.dict("os.environ", {"CODEMURPHY_GITHUB_TOKEN": "fixture"}), \
+             patch("codemurphy.cli.GitHub", return_value=api), redirect_stdout(StringIO()):
+            code = main(["github", "--repo", REPO, "--pr", "5", "--static-only", "--publish",
+                         "--fail-on", "high", "--publisher-login", "github-actions[bot]"])
+        self.assertEqual(code, 1)
+        self.assertTrue(all(body is None for _, body in api.calls))

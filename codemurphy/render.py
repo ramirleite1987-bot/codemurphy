@@ -15,14 +15,22 @@ def plain(value):
     return re.sub(r"([\\`*_\[\]{}()!|~+.-])", r"\\\1", escape(text, quote=False))
 
 
-def comment(issue):
+def comment(issue, *, language="English"):
+    pt = language.casefold().startswith(("pt", "portugu"))
+    trigger, impact, fix, check, refs = (
+        ("Gatilho", "Impacto", "Correção sugerida", "Como verificar", "Referências") if pt else
+        ("Trigger", "Impact", "Suggested change", "How to verify", "References"))
     categories = f"{plain(issue['severity'])} · {plain(issue['category'])}"
-    body = f"**{plain(issue['title'])}** ({categories})\n\n{plain(issue['detail'])}\n\n"
-    body += f"**Suggested change:** {plain(issue['suggestion'])}"
+    body = f"**{plain(issue['title'])}** ({categories})"
+    if issue.get("trigger"):
+        fields = ((trigger, "trigger"), (impact, "impact"), (fix, "suggestion"), (check, "verification"))
+        body += "".join(f"\n\n**{label}:** {plain(issue[key])}" for label, key in fields)
+    else:
+        body += f"\n\n{plain(issue['detail'])}\n\n**{fix}:** {plain(issue['suggestion'])}"
     if issue["citations"]:
         entries = [f"{plain(c['repo'])}/{plain(c['path'])}:{c['line']} ({c['commit'][:12]})"
                    for c in issue["citations"]]
-        body += "\n\n**References:** " + ", ".join(entries)
+        body += f"\n\n**{refs}:** " + ", ".join(entries)
     return body
 
 
@@ -56,6 +64,10 @@ def markdown(report, *, summary=False, issues=None):
         for model, stats in report["models"].items():
             if stats["errors"]:
                 lines.append(f"\n{plain(model)}: {', '.join(plain(x) for x in stats['errors'])}.")
+    if verification := report.get("verification"):
+        lines.append(f"\nSecond review ({plain(verification['reviewer'])}): "
+                     f"{verification['confirmed']}/{verification['checked']} confirmed, "
+                     f"{verification['failed_requests']} failed batches, {verification['withheld']} beyond the cap.")
     if summary and report["private_context"]:
         lines.append("\nFindings and paths are omitted because private linked context was loaded.")
         return "\n".join(lines) + "\n"
@@ -69,7 +81,7 @@ def markdown(report, *, summary=False, issues=None):
         return "\n".join(lines) + "\n"
     for item in issues:
         lines += ["", f"### {plain(item['path'])}:{item['line']} ({item['side']})", "",
-                  comment(item), "", "Reviewers: " + ", ".join(plain(x) for x in item["sources"]),
+                  comment(item, language=report.get("language", "English")), "", "Reviewers: " + ", ".join(plain(x) for x in item["sources"]),
                   f"Finding ID: `{item['id']}`"]
     if not issues:
         lines.append("\nNo findings met the review policy.")

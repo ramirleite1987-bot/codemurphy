@@ -55,7 +55,10 @@ def record(path, report):
             return
         fields = ("requests", "failed_requests", "findings", "rejected", "input_tokens", "output_tokens",
                   "estimated_usd", "latencies_ms")
-        for model, stats in report["models"].items():
+        reviewers = dict(report["models"])
+        if verification := report.get("verification"):
+            reviewers[f"verify:{verification['reviewer']}"] = verification
+        for model, stats in reviewers.items():
             conn.execute("INSERT INTO models VALUES (?, ?, ?, ?, ?)",
                          (report["run_id"], model, stats["provider"], stats["model"],
                           json.dumps({**{key: stats[key] for key in fields}, "resolved_models": stats.get("resolved_models", [])},

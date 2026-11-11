@@ -201,7 +201,10 @@ def _rollup(rows):
 
 def evaluate(suite, config, *, static_only=False, baselines=None, provider=call):
     model_ids = [] if static_only else [m.id for m in config.models]
-    outputs = {k: {} for k in (["static", "combined", "published-primary"] + model_ids if model_ids else ["static"])}
+    labels = ["static"]
+    if model_ids:
+        labels += ([] if config.verify_with else ["combined"]) + ["published-primary"] + model_ids
+    outputs = {k: {} for k in labels}
     imported = {}
     for label, value in (baselines or {}).items():
         if label in outputs or not LABEL.fullmatch(label):
@@ -215,6 +218,7 @@ def evaluate(suite, config, *, static_only=False, baselines=None, provider=call)
         snapshots[case.id] = {"input_sha256": report["input_sha256"], "coverage": report["coverage"]}
         anchors = {(x.path, x.side, x.number) for f in case.files for x in f.lines if x.changed}
         partial = report["coverage"]["partial"]
+        verification = report.get("verification")
         for reviewer, rows in outputs.items():
             cost, latency, rejected, versions = None, None, 0, []
             complete = not partial
@@ -242,6 +246,12 @@ def evaluate(suite, config, *, static_only=False, baselines=None, provider=call)
                 issues = publication_findings(report)[:config.max_comments]
                 cost, latency, rejected = stats["estimated_usd"], stats["wall_ms"], stats["rejected"]
                 versions = stats["resolved_models"]
+                if verification:
+                    complete &= not verification["failed_requests"]
+                    extra = verification["estimated_usd"]
+                    cost = cost + extra if cost is not None and extra is not None else None
+                    phases = (latency, verification["wall_ms"])
+                    latency = sum(ms for ms in phases if ms is not None)
             else:
                 stats = report["models"][reviewer]
                 complete &= stats["failed_requests"] == 0
