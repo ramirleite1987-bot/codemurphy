@@ -161,13 +161,15 @@ def _bench_markdown(result):
     lines = [f"## Benchmark: {plain(result['suite'])}", "",
              f"Common completed cases: {len(result['common_cases'])}/{result['case_count']}.",
              f"Suite SHA-256: `{result['suite_sha256']}`", "",
-             "| Reviewer | Completed | Precision | Recall | Weighted recall | Est. USD | p95 review |",
-             "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+             "| Reviewer | Completed | Precision | Recall | Weighted recall | Billed USD | Est. USD | p95 review |",
+             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for label, candidate in result["candidates"].items():
         common = candidate["common"] or {}
         cost, latency = common.get("cost_usd"), common.get("p95_latency_ms")
+        billed = common.get("billed_usd")
         lines.append(f"| {plain(label)} | {candidate['completed_cases']} | {pct(common.get('precision'))} | "
                      f"{pct(common.get('recall'))} | {pct(common.get('weighted_recall'))} | "
+                     f"{'—' if billed is None else f'{billed:.6f}'} | "
                      f"{'—' if cost is None else f'{cost:.6f}'} | "
                      f"{'—' if latency is None else f'{latency:.0f} ms'} |")
     return "\n".join(lines) + "\n"

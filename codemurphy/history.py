@@ -61,7 +61,8 @@ def record(path, report):
         for model, stats in reviewers.items():
             conn.execute("INSERT INTO models VALUES (?, ?, ?, ?, ?)",
                          (report["run_id"], model, stats["provider"], stats["model"],
-                          json.dumps({**{key: stats[key] for key in fields}, "resolved_models": stats.get("resolved_models", [])},
+                          json.dumps({**{key: stats[key] for key in fields}, "billed_usd": stats.get("billed_usd"),
+                                      "resolved_models": stats.get("resolved_models", [])},
                                      allow_nan=False)))
         conn.executemany("INSERT INTO findings (run_id, id, sources) VALUES (?, ?, ?)",
                          [(report["run_id"], i["id"], json.dumps(i["sources"])) for i in report["findings"]])
@@ -95,6 +96,7 @@ def metrics(path, repo=None):
         votes = {v: rated[key][v] for v in VERDICTS}
         valid = votes["useful"] + votes["false-positive"] + votes["duplicate"]
         costs = [x["estimated_usd"] for x in stats]
+        billed = [x.get("billed_usd") for x in stats]
         def known_total(field):
             values = [s[field] for s in stats]
             return sum(values) if all(x is not None for x in values) else None
@@ -105,6 +107,8 @@ def metrics(path, repo=None):
                      "p95_latency_ms": percentile95([ms for s in stats for ms in s["latencies_ms"]]),
                      "cost_usd": round(sum(costs), 10) if all(c is not None for c in costs) else None,
                      "priced_runs": sum(c is not None for c in costs),
+                     "billed_usd": round(sum(billed), 10) if all(c is not None for c in billed) else None,
+                     "billed_runs": sum(c is not None for c in billed),
                      "reported_versions": dict(sorted(Counter(v for s in stats for v in s.get("resolved_models", [])).items())),
                      "feedback": votes, "rated_findings": valid,
                      "useful_rate": round(votes["useful"] / valid, 6) if valid else None})

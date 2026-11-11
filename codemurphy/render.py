@@ -51,15 +51,17 @@ def markdown(report, *, summary=False, issues=None):
     if report.get("publication"):
         lines.append(f"GitHub review: {plain(report['publication'])}.")
     if report["models"]:
-        lines += ["", "| Reviewer | Findings | Failed batches | Tokens in / out | Est. USD | p95 request |",
-                  "| --- | ---: | ---: | ---: | ---: | ---: |"]
+        lines += ["", "| Reviewer | Findings | Failed batches | Tokens in / out | Billed USD | Est. USD | p95 request |",
+                  "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
         for model, stats in report["models"].items():
             def show(val):
                 return "—" if val is None else str(val)
             cost = stats["estimated_usd"]
+            billed = stats.get("billed_usd")
             ms = stats["p95_latency_ms"]
             lines.append(f"| {plain(model)} | {stats['findings']} | {stats['failed_requests']}/{stats['requests']} | "
                          f"{show(stats['input_tokens'])} / {show(stats['output_tokens'])} | "
+                         f"{'—' if billed is None else f'{billed:.6f}'} | "
                          f"{'—' if cost is None else f'{cost:.6f}'} | {'—' if ms is None else f'{ms:.0f} ms'} |")
         for model, stats in report["models"].items():
             if stats["errors"]:
@@ -68,6 +70,8 @@ def markdown(report, *, summary=False, issues=None):
         lines.append(f"\nSecond review ({plain(verification['reviewer'])}): "
                      f"{verification['confirmed']}/{verification['checked']} confirmed, "
                      f"{verification['failed_requests']} failed batches, {verification['withheld']} beyond the cap.")
+        if (billed := verification.get("billed_usd")) is not None:
+            lines.append(f"Second review billed: USD {billed:.6f}.")
     if summary and report["private_context"]:
         lines.append("\nFindings and paths are omitted because private linked context was loaded.")
         return "\n".join(lines) + "\n"

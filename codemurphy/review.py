@@ -299,6 +299,7 @@ def _aggregate(model, results):
     rows = [row for row in results if row[4] is None]
     usage_in = _sum_known([x[3].input_tokens if x[3] else None for x in results])
     usage_out = _sum_known([x[3].output_tokens if x[3] else None for x in results])
+    billed = _sum_known([x[3].billed_usd if x[3] else None for x in results])
     cost = (round((usage_in * model.input_usd_per_million + usage_out * model.output_usd_per_million) / 1e6, 10)
             if None not in (usage_in, usage_out, model.input_usd_per_million) else (0 if not results else None))
     issues = merge_findings([issue for row in rows for issue in row[0]])
@@ -309,7 +310,8 @@ def _aggregate(model, results):
                     "errors": sorted({redact(x[4])[:160] for x in results if x[4]}),
                     "rejected": sum(x[1] for x in rows), "filtered": sum(x[2] for x in rows),
                     "findings": len(issues), "input_tokens": usage_in, "output_tokens": usage_out,
-                    "estimated_usd": cost, "latencies_ms": [x[5] for x in results],
+                    "estimated_usd": cost, "billed_usd": round(billed, 10) if billed is not None else None,
+                    "latencies_ms": [x[5] for x in results],
                     "p95_latency_ms": percentile95([x[5] for x in results]),
                     "wall_ms": round((max(x[7] for x in results) - min(x[6] for x in results)) * 1000, 1) if results else None}
 

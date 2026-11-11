@@ -154,6 +154,10 @@ Use `input_usd_per_million` e `output_usd_per_million` em cada modelo para
 estimar o custo com base nos tokens reportados pela API; valores não
 informados ou uso desconhecido aparecem como ausentes. A estimativa usa
 preços cheios, sem descontos de cache, taxas ou outros custos do provedor.
+No OpenRouter, `billed_usd` soma a cobrança devolvida pela API, separada
+da estimativa. Se alguma chamada não informou cobrança, o total faturado
+fica ausente. O custo do verificador aparece separado no relatório de PR
+e é incluído no benchmark da linha `published-primary`.
 
 Para medir utilidade no uso diário, importe relatórios com `codemurphy record
 ARQUIVO --db BANCO`, ou grave no banco durante a revisão. Depois rotule

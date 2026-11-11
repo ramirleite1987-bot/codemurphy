@@ -189,14 +189,21 @@ def _rollup(rows):
     def ratio(a, b):
         return round(a / b, 6) if b else None
     costs = [r["cost_usd"] for r in rows]
+    billed = [r["billed_usd"] for r in rows]
     return {**totals, "precision": ratio(tp, tp + fp), "recall": ratio(tp, tp + fn),
             "f1": ratio(2 * tp, 2 * tp + fp + fn),
             "weighted_recall": ratio(totals["matched_weight"], totals["expected_weight"]),
             "clean_cases_with_findings": sum(r["expected_weight"] == 0 and r["fp"] > 0 for r in rows),
             "cost_usd": round(sum(costs), 10) if all(v is not None for v in costs) else None,
             "measured_cost_cases": sum(v is not None for v in costs),
+            "billed_usd": _total_usd(billed),
+            "billed_cases": sum(v is not None for v in billed),
             "p95_latency_ms": percentile95([r["latency_ms"] for r in rows if r["latency_ms"] is not None]),
             "measured_latency_cases": sum(r["latency_ms"] is not None for r in rows)}
+
+
+def _total_usd(values):
+    return round(sum(values), 10) if all(v is not None for v in values) else None
 
 
 def evaluate(suite, config, *, static_only=False, baselines=None, provider=call):
@@ -220,24 +227,24 @@ def evaluate(suite, config, *, static_only=False, baselines=None, provider=call)
         partial = report["coverage"]["partial"]
         verification = report.get("verification")
         for reviewer, rows in outputs.items():
-            cost, latency, rejected, versions = None, None, 0, []
+            cost, billed, latency, rejected, versions = None, None, None, 0, []
             complete = not partial
             if reviewer in imported:
                 if case.id not in imported[reviewer]:
-                    rows[case.id] = {"status": "missing", "cost_usd": None, "latency_ms": None}
+                    rows[case.id] = {"status": "missing", "cost_usd": None, "billed_usd": None, "latency_ms": None}
                     continue
                 issues, measured = imported[reviewer][case.id]
                 cost, latency = measured.get("cost_usd"), measured.get("latency_ms")
                 complete = True
             elif reviewer == "static":
-                issues, cost = report["candidates"]["static"], 0
+                issues, cost, billed = report["candidates"]["static"], 0, 0
                 if static_only:
                     latency = report["wall_ms"]
             elif reviewer == "combined":
                 stats = list(report["models"].values())
                 complete &= not any(s["failed_requests"] for s in stats)
-                costs = [s["estimated_usd"] for s in stats]
-                cost = sum(costs) if all(c is not None for c in costs) else None
+                cost = _total_usd([s["estimated_usd"] for s in stats])
+                billed = _total_usd([s["billed_usd"] for s in stats])
                 rejected = sum(s["rejected"] for s in stats)
                 issues, latency = report["findings"], report["wall_ms"]
             elif reviewer == "published-primary":
@@ -245,11 +252,12 @@ def evaluate(suite, config, *, static_only=False, baselines=None, provider=call)
                 complete &= stats["failed_requests"] == 0
                 issues = publication_findings(report)[:config.max_comments]
                 cost, latency, rejected = stats["estimated_usd"], stats["wall_ms"], stats["rejected"]
+                billed = stats["billed_usd"]
                 versions = stats["resolved_models"]
                 if verification:
                     complete &= not verification["failed_requests"]
-                    extra = verification["estimated_usd"]
-                    cost = cost + extra if cost is not None and extra is not None else None
+                    cost = _total_usd([cost, verification["estimated_usd"]])
+                    billed = _total_usd([billed, verification["billed_usd"]])
                     phases = (latency, verification["wall_ms"])
                     latency = sum(ms for ms in phases if ms is not None)
             else:
@@ -257,9 +265,11 @@ def evaluate(suite, config, *, static_only=False, baselines=None, provider=call)
                 complete &= stats["failed_requests"] == 0
                 issues = report["candidates"][reviewer]
                 cost, latency, rejected = stats["estimated_usd"], stats["wall_ms"], stats["rejected"]
+                billed = stats["billed_usd"]
                 versions = stats["resolved_models"]
             rows[case.id] = {**score_findings(case.expected, issues, anchors), "status": "complete" if complete else "partial",
-                             "cost_usd": cost, "latency_ms": latency, "rejected_findings": rejected,
+                             "cost_usd": cost, "billed_usd": billed,
+                             "latency_ms": latency, "rejected_findings": rejected,
                              "resolved_models": versions,
                              "findings": [{k: redact(i[k]) if k in ("path", "title") else i[k]
                                            for k in ("path", "line", "side", "category", "title")} for i in issues]}
@@ -267,10 +277,10 @@ def evaluate(suite, config, *, static_only=False, baselines=None, provider=call)
     candidates = {}
     for label, rows in outputs.items():
         completed = [r for r in rows.values() if r["status"] == "complete"]
-        costs = [r["cost_usd"] for r in rows.values()]
         candidates[label] = {"completed_cases": len(completed), "own": _rollup(completed),
                              "common": _rollup([rows[i] for i in common]),
-                             "cost_usd": round(sum(costs), 10) if all(c is not None for c in costs) else None,
+                             "cost_usd": _total_usd([r["cost_usd"] for r in rows.values()]),
+                             "billed_usd": _total_usd([r["billed_usd"] for r in rows.values()]),
                              "cases": rows}
     return {"schema": 1, "suite": suite.id, "suite_sha256": suite.sha256,
             "case_count": len(suite.cases), "common_cases": common, "inputs": snapshots,

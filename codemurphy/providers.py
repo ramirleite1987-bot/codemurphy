@@ -15,10 +15,15 @@ class Reply:
     input_tokens: int | None
     output_tokens: int | None
     resolved_model: str | None = None
+    billed_usd: float | None = None
 
 
 def _tokens(value):
     return value if type(value) is int and 0 <= value <= 100_000_000 else None
+
+
+def _charge(value):
+    return float(value) if type(value) in (int, float) and 0 <= value <= 1_000_000_000 else None
 
 
 def call(model, system, data, timeout, *, schema=None):
@@ -78,6 +83,7 @@ def call(model, system, data, timeout, *, schema=None):
         resolved = result.get("model")
         if not isinstance(resolved, str) or not 0 < len(resolved) <= 180:
             resolved = None
-        return Reply(content if isinstance(content, str) else "", in_tokens, out_tokens, resolved)
+        charge = _charge(usage.get("cost")) if model.provider == "openrouter" else None
+        return Reply(content if isinstance(content, str) else "", in_tokens, out_tokens, resolved, charge)
     except (AttributeError, IndexError, KeyError, TypeError):
         raise ModelError("Unrecognized provider response") from None
