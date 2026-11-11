@@ -21,7 +21,7 @@ def _tokens(value):
     return value if type(value) is int and 0 <= value <= 100_000_000 else None
 
 
-def call(model, system, data, timeout):
+def call(model, system, data, timeout, *, schema=None):
     key = os.environ.get(model.api_key_env) if model.api_key_env else None
     if model.api_key_env and not key:
         raise ModelError(f"Missing environment variable {model.api_key_env}")
@@ -41,7 +41,14 @@ def call(model, system, data, timeout):
         if key:
             headers["Authorization"] = "Bearer " + key
         payload["messages"].insert(0, {"role": "system", "content": system})
-        if model.json_mode:
+        if model.json_schema:
+            if schema is None:
+                raise ModelError("A response schema is required for this model")
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "codemurphy", "strict": True, "schema": schema},
+            }
+        elif model.json_mode:
             payload["response_format"] = {"type": "json_object"}
         path = "/chat/completions"
     try:

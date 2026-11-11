@@ -15,7 +15,7 @@ from .diff import make_batches
 from .providers import ModelError, call
 from .redact import redact
 
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 
 _SYSTEM = """You are CodeMurphy, a rigorous code reviewer. Find introduced, actionable defects.
 Every issue needs a concrete trigger and impact supported by the supplied data.
@@ -35,6 +35,7 @@ the relevant context id, exact source line and its text. Never invent citations.
 Severity: critical = credible catastrophic impact; high = serious production or security failure;
 medium = concrete regression; low = limited impact. Confidence is between 0 and 1.
 Return only a JSON object with a "findings" array of up to 20 distinct issues.
+If there are no supported defects, return {"findings":[]} exactly.
 For every defect, give a trigger, a concrete consequence, a targeted fix and a test or reproducible check.
 A performance claim needs a path that actually grows or blocks, and an input or scale that triggers it.
 A security claim needs an attacker-controlled input, a reachable sensitive operation and a missing guard.
@@ -71,6 +72,35 @@ Confirm only supported findings. Return only {"confirmed":[{"id":"exact candidat
 _POLICY = "\nTrusted project policy:\n"
 
 
+def _object_schema(properties):
+    return {"type": "object", "properties": properties,
+            "required": list(properties), "additionalProperties": False}
+
+
+def _list_schema(items):
+    return {"type": "array", "items": items}
+
+
+_STRING = {"type": "string"}
+_POSITIVE_LINE = {"type": "integer", "minimum": 1}
+_CONFIRM_SCHEMA = _object_schema({"confirmed": _list_schema(_object_schema(
+    {"id": _STRING, "quote": _STRING}))})
+
+
+def _finding_schema(config):
+    citation = _object_schema({"id": _STRING, "line": _POSITIVE_LINE, "quote": _STRING})
+    finding = _object_schema({
+        "path": _STRING, "side": {"type": "string", "enum": ["LEFT", "RIGHT"]},
+        "line": _POSITIVE_LINE, "quote": _STRING,
+        "category": {"type": "string", "enum": list(config.categories)},
+        "severity": {"type": "string", "enum": list(SEVERITIES)},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "title": _STRING, "trigger": _STRING, "impact": _STRING,
+        "suggestion": _STRING, "verification": _STRING, "citations": _list_schema(citation),
+    })
+    return _object_schema({"findings": _list_schema(finding)})
+
+
 
 def _hash(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=True,
@@ -82,7 +112,7 @@ def reviewer_metadata(config):
                    "input_usd_per_million": m.input_usd_per_million,
                    "output_usd_per_million": m.output_usd_per_million,
                    "max_output_tokens": m.max_output_tokens, "token_parameter": m.token_parameter,
-                   "json_mode": m.json_mode, "temperature": m.temperature}
+                   "json_mode": m.json_mode, "json_schema": m.json_schema, "temperature": m.temperature}
             for m in config.models}
 
 
@@ -246,11 +276,12 @@ def percentile95(values):
     return sorted(values)[math.ceil(.95 * len(values)) - 1] if values else None
 
 
-def _request(model, system, data, config, provider, parse):
+def _request(model, system, data, config, provider, parse, schema=None):
     started = time.perf_counter()
     reply = None
     try:
-        reply = provider(model, system, data, config.timeout)
+        options = {"schema": schema} if model.json_schema else {}
+        reply = provider(model, system, data, config.timeout, **options)
         issues, rejected, filtered = parse(reply.content)
         error = None
     except ModelError as exc:
@@ -286,7 +317,8 @@ def _aggregate(model, results):
 def _review_batch(model, pack, config, provider):
     system, data, anchors, refs = pack
     return _request(model, system, data, config, provider,
-                    lambda content: _result(content, anchors, refs, config, model.id))
+                    lambda content: _result(content, anchors, refs, config, model.id),
+                    _finding_schema(config) if model.json_schema else None)
 
 
 def _confirmation(content, candidates):
@@ -312,7 +344,8 @@ def _verify_batch(model, pack, issues, config, provider):
     prompt = _VERIFY_SYSTEM + _POLICY + system.rsplit(_POLICY, 1)[1]
     payload = json.dumps({"input": json.loads(data), "candidates": issues}, ensure_ascii=False,
                          separators=(",", ":"))
-    return _request(model, prompt, payload, config, provider, lambda body: _confirmation(body, candidates))
+    return _request(model, prompt, payload, config, provider, lambda body: _confirmation(body, candidates),
+                    _CONFIRM_SCHEMA)
 
 
 def _verification(pool, model, packs, issues, config, provider):

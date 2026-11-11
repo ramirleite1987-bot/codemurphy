@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 12
     steps:
       # Use a verified full commit SHA in production.
-      - uses: ramirleite1987-bot/codemurphy@v0.2.0
+      - uses: ramirleite1987-bot/codemurphy@v0.2.1
         with:
           trusted-base: main
           mode: primary

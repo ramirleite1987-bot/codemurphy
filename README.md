@@ -172,3 +172,8 @@ modelo encontrou.
 python3 -m unittest discover -s tests -v
 python3 -m codemurphy benchmark examples/benchmark/suite.json --static-only
 ```
+
+Endpoints compatíveis com saídas estruturadas, como Ollama, podem usar
+`json_schema: true` no modelo. O esquema exige a lista `findings` na
+revisão e `confirmed` na verificação. A ferramenta continua validando
+se as linhas, citações e evidências existem no diff.

@@ -99,6 +99,7 @@ class Model:
     max_output_tokens: int
     token_parameter: str
     json_mode: bool
+    json_schema: bool
     temperature: float | None
 
 
@@ -144,7 +145,7 @@ class Config:
 
 def _model(value):
     m = obj(value, "id provider model base_url api_key_env input_usd_per_million "
-                   "output_usd_per_million max_output_tokens token_parameter json_mode temperature", "model")
+                   "output_usd_per_million max_output_tokens token_parameter json_mode json_schema temperature", "model")
     identifier = string(m.get("id"), "model.id", 64)
     if not LABEL.fullmatch(identifier) or identifier in {"static", "combined", "published-primary"}:
         raise ConfigError("Invalid or reserved model.id")
@@ -177,9 +178,9 @@ def _model(value):
     param = m.get("token_parameter", "max_completion_tokens" if url == default_url and not anthropic else "max_tokens")
     if param not in ("max_completion_tokens", "max_tokens") or anthropic and param != "max_tokens":
         raise ConfigError("Unsupported model.token_parameter")
-    json_mode = m.get("json_mode", False)
-    if type(json_mode) is not bool or anthropic and json_mode:
-        raise ConfigError("model.json_mode is a boolean and requires an OpenAI-compatible endpoint")
+    json_mode, json_schema = m.get("json_mode", False), m.get("json_schema", False)
+    if type(json_mode) is not bool or type(json_schema) is not bool or anthropic and (json_mode or json_schema):
+        raise ConfigError("model.json_mode and model.json_schema are booleans for OpenAI-compatible endpoints")
     temperature = (number(m["temperature"], "model.temperature", 0, 1 if anthropic else 2)
                    if "temperature" in m else None)
     prices = []
@@ -188,7 +189,7 @@ def _model(value):
     if (prices[0] is None) != (prices[1] is None):
         raise ConfigError("Set both per-million prices or leave both unset")
     return Model(identifier, provider, string(m.get("model"), "model.model", 180), url,
-                 key_env, *prices, integer(m.get("max_output_tokens", 2400), "max_output_tokens", 256, 16000), param, json_mode, temperature)
+                 key_env, *prices, integer(m.get("max_output_tokens", 2400), "max_output_tokens", 256, 16000), param, json_mode, json_schema, temperature)
 
 
 def _paths(value):

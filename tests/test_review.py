@@ -156,3 +156,14 @@ class ProviderTests(unittest.TestCase):
                                             "api_key_env": None}]}).models[0]
             with self.assertRaisesRegex(ModelError, "^HTTP 307$"):
                 call(model, "system", "input", 5)
+
+    def test_strict_json_schema_is_sent_as_response_format(self):
+        response = {"choices": [{"message": {"content": '{"findings":[]}'}}]}
+        with self.endpoint(response) as (url, seen):
+            model = load_config({"models": [{"id": "local", "model": "fake", "base_url": url,
+                                            "api_key_env": None, "json_schema": True}]}).models[0]
+            schema = {"type": "object", "required": ["findings"]}
+            self.assertEqual(call(model, "system", "input", 5, schema=schema).content, '{"findings":[]}')
+            envelope = seen[0][1]["response_format"]
+            self.assertEqual(envelope["type"], "json_schema")
+            self.assertEqual(envelope["json_schema"]["schema"], schema)

@@ -1,3 +1,4 @@
+from dataclasses import replace
 import json
 import unittest
 
@@ -100,3 +101,18 @@ class CommentQualityTests(unittest.TestCase):
             load_config({"models": [{"id": ident, "model": "same", "api_key_env": None}
                                     for ident in ("primary", "critic")],
                          "review": {"verify_with": "critic"}})
+
+    def test_strict_models_receive_distinct_review_and_confirmation_schemas(self):
+        cfg, files, refs, issue = self.setup_review(verify_with="critic")
+        cfg = replace(cfg, models=tuple(replace(model, json_schema=True) for model in cfg.models))
+        def provider(model, system, data, timeout, *, schema):
+            if model.id == "primary":
+                self.assertEqual(schema["required"], ["findings"])
+                fields = schema["properties"]["findings"]["items"]
+                self.assertIn("verification", fields["required"])
+                return Reply(json.dumps({"findings": [issue]}), 100, 60)
+            self.assertEqual(schema["required"], ["confirmed"])
+            [candidate] = json.loads(data)["candidates"]
+            return Reply(json.dumps({"confirmed": [{"id": candidate["id"], "quote": "persist(row)"}]}), 30, 8)
+        report = run_review(cfg, files, refs, provider=provider)
+        self.assertEqual(len(publication_findings(report)), 1)
