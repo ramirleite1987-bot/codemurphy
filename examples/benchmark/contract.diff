@@ -1,0 +1,7 @@
+diff --git a/invoice.py b/invoice.py
+--- a/invoice.py
++++ b/invoice.py
+@@ -1,2 +1,2 @@
+ def invoice_json(invoice):
+-    return {"currency": invoice.currency}
++    return {"currency": int(invoice.currency_number)}

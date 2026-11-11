@@ -1,0 +1,9 @@
+diff --git a/access.py b/access.py
+--- a/access.py
++++ b/access.py
+@@ -1,3 +1,3 @@
+ def may_delete(resource, actor):
+-    can_delete = actor.is_admin or resource.owner_id == actor.id
+-    return can_delete
++    cannot_delete = actor.is_admin or resource.owner_id == actor.id
++    return cannot_delete

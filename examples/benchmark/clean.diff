@@ -1,0 +1,7 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -1,2 +1,2 @@
+ # Reports
+-Each report has a timestmap.
++Each report has a timestamp.

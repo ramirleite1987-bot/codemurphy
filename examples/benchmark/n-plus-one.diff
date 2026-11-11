@@ -1,0 +1,10 @@
+diff --git a/dashboard.py b/dashboard.py
+--- a/dashboard.py
++++ b/dashboard.py
+@@ -3,2 +3,5 @@
+ def order_totals(order_ids):
+-    return db.fetch_totals(order_ids)
++    totals = {}
++    for order_id in order_ids:
++        totals[order_id] = db.fetch_total(order_id)
++    return totals

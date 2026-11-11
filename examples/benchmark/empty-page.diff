@@ -1,0 +1,7 @@
+diff --git a/paging.py b/paging.py
+--- a/paging.py
++++ b/paging.py
+@@ -1,2 +1,2 @@
+ def page_cursor(items):
+-    return items[-1].id if items else None
++    return items[-1].id

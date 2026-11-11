@@ -1,0 +1,62 @@
+{
+  "primary": "openai",
+  "models": [
+    {
+      "id": "openai",
+      "provider": "openai-compatible",
+      "model": "gpt-5-mini",
+      "api_key_env": "OPENAI_API_KEY",
+      "max_output_tokens": 6000
+    },
+    {
+      "id": "claude",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "max_output_tokens": 4000
+    }
+  ],
+  "review": {
+    "language": "Português do Brasil",
+    "categories": [
+      "security",
+      "correctness",
+      "scalability",
+      "clarity",
+      "tests",
+      "edge-cases"
+    ],
+    "instructions": "Priorize regressões e achados acionáveis. Identifique o gatilho, o impacto e como reproduzir.",
+    "exclude": [
+      "**/*.lock",
+      "**/package-lock.json",
+      "**/dist/**",
+      "**/vendor/**"
+    ],
+    "min_severity": "medium",
+    "min_confidence": 0.7,
+    "max_comments": 12,
+    "rules": [
+      {
+        "paths": [
+          "**/migrations/**",
+          "**/*.sql"
+        ],
+        "instructions": "Verifique locks, compatibilidade de rollback e filtros por tenant."
+      },
+      {
+        "paths": [
+          "**/tests/**",
+          "**/*_test.py"
+        ],
+        "instructions": "Procure testes que poderiam passar mesmo quando o comportamento mudou."
+      }
+    ]
+  },
+  "context": {
+    "files": [
+      "README.md"
+    ],
+    "linked": []
+  }
+}

@@ -1,0 +1,8 @@
+diff --git a/orders.py b/orders.py
+--- a/orders.py
++++ b/orders.py
+@@ -10,4 +10,3 @@
+ def get_order(actor, order_id):
+-    require_order_access(actor, order_id)
+     order = orders.fetch(order_id)
+     return order.to_dict()

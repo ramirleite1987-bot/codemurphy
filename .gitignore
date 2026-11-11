@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.env
+.env.*
+*.sqlite3
+*.sqlite3-*
+codemurphy-report.json
+codemurphy-benchmark.json
+.DS_Store

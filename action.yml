@@ -1,0 +1,97 @@
+name: CodeMurphy Review
+description: Review PR diffs with configurable models and keep auditable per-model metrics.
+branding:
+  icon: check-circle
+  color: purple
+inputs:
+  github-token:
+    description: Token with contents read and pull requests read (write for publication).
+    default: '${{ github.token }}'
+  openai-api-key:
+    description: OpenAI credential exposed as OPENAI_API_KEY.
+    default: ''
+  anthropic-api-key:
+    description: Anthropic credential exposed as ANTHROPIC_API_KEY.
+    default: ''
+  compatible-api-key:
+    description: Custom provider credential exposed as CODEMURPHY_MODEL_API_KEY.
+    default: ''
+  context-token:
+    description: Optional read-only token for linked repositories.
+    default: ''
+  trusted-base:
+    description: Exact base branch allowed to provide the review configuration.
+    default: main
+  config-path:
+    description: Repository-relative configuration path read at the base commit.
+    default: .codemurphy.json
+  mode:
+    description: primary or compare; compare runs every configured model.
+    default: primary
+  static-only:
+    description: Run the deterministic credential checks without any model calls.
+    default: 'false'
+  publish:
+    description: Submit a GitHub COMMENT review when the selected reviewers finish.
+    default: 'false'
+  publish-scope:
+    description: primary posts only the main reviewer plus static checks; combined includes all reviewers.
+    default: primary
+  allow-forks:
+    description: Allow reviews of fork PRs. Fork PRs are skipped by default.
+    default: 'false'
+  fail-on:
+    description: Optional minimum finding severity that fails the job.
+    default: ''
+outputs:
+  report-path:
+    description: JSON report on the runner. The caller controls retention and access.
+    value: '${{ steps.review.outputs.report-path }}'
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: '3.12'
+    - id: review
+      shell: bash
+      env:
+        CODEMURPHY_GITHUB_TOKEN: '${{ inputs.github-token }}'
+        CODEMURPHY_CONTEXT_TOKEN: '${{ inputs.context-token }}'
+        CODEMURPHY_MODEL_API_KEY: '${{ inputs.compatible-api-key }}'
+        OPENAI_API_KEY: '${{ inputs.openai-api-key }}'
+        ANTHROPIC_API_KEY: '${{ inputs.anthropic-api-key }}'
+        CM_PR: '${{ github.event.pull_request.number }}'
+        CM_HEAD: '${{ github.event.pull_request.head.sha }}'
+        CM_TRUSTED_BASE: '${{ inputs.trusted-base }}'
+        CM_CONFIG: '${{ inputs.config-path }}'
+        CM_MODE: '${{ inputs.mode }}'
+        CM_STATIC: '${{ inputs.static-only }}'
+        CM_PUBLISH: '${{ inputs.publish }}'
+        CM_SCOPE: '${{ inputs.publish-scope }}'
+        CM_ALLOW_FORKS: '${{ inputs.allow-forks }}'
+        CM_FAIL_ON: '${{ inputs.fail-on }}'
+      run: |
+        if [[ "$GITHUB_EVENT_NAME" != pull_request_target || -z "$CM_PR" || -z "$CM_HEAD" ]]; then
+          echo "CodeMurphy requires a pull_request_target workflow on a trusted base branch." >&2
+          exit 2
+        fi
+        for value in "$CM_STATIC" "$CM_PUBLISH" "$CM_ALLOW_FORKS"; do
+          if [[ "$value" != true && "$value" != false ]]; then
+            echo "Boolean CodeMurphy inputs must be true or false." >&2
+            exit 2
+          fi
+        done
+        folder="$(mktemp -d "$RUNNER_TEMP/codemurphy.XXXXXXXX")"
+        report="$folder/review.json"
+        args=(github "--repo=$GITHUB_REPOSITORY" "--pr=$CM_PR" "--expected-head=$CM_HEAD"
+              --use-base-config "--trusted-base=$CM_TRUSTED_BASE" "--config-path=$CM_CONFIG" "--mode=$CM_MODE"
+              "--publish-scope=$CM_SCOPE" '--publisher-login=github-actions[bot]' --format=json
+              "--output=$report" "--summary=$GITHUB_STEP_SUMMARY")
+        if [[ "$CM_STATIC" == true ]]; then args+=(--static-only); fi
+        if [[ "$CM_PUBLISH" == true ]]; then args+=(--publish); fi
+        if [[ "$CM_ALLOW_FORKS" == true ]]; then args+=(--allow-forks); fi
+        if [[ -n "$CM_FAIL_ON" ]]; then args+=("--fail-on=$CM_FAIL_ON"); fi
+        printf 'report-path=%s\n' "$report" >> "$GITHUB_OUTPUT"
+        cd -- "$GITHUB_ACTION_PATH"
+        python -E -s -m codemurphy "${args[@]}"

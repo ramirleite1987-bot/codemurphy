@@ -1,0 +1,25 @@
+name: CodeMurphy
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+concurrency:
+  group: codemurphy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  review:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      # Use a verified full commit SHA in production.
+      - uses: ramirleite1987-bot/codemurphy@v0.1.0
+        with:
+          trusted-base: main
+          mode: primary
+          publish: 'true'
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}

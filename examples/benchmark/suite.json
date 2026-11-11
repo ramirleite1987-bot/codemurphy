@@ -1,0 +1,157 @@
+{
+  "id": "codemurphy-smoke-v1",
+  "cases": [
+    {
+      "id": "credential",
+      "diff": "credential.diff",
+      "expected": [
+        {
+          "id": "credential-leak",
+          "path": "settings.py",
+          "side": "RIGHT",
+          "start": 1,
+          "category": "security",
+          "weight": 3,
+          "keywords": [
+            "credential",
+            "token",
+            "secret"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "auth-removal",
+      "diff": "auth-removal.diff",
+      "expected": [
+        {
+          "id": "missing-auth",
+          "path": "orders.py",
+          "side": "LEFT",
+          "start": 11,
+          "category": "security",
+          "weight": 3,
+          "keywords": [
+            "authoriz",
+            "ownership",
+            "access",
+            "tenant"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n-plus-one",
+      "diff": "n-plus-one.diff",
+      "expected": [
+        {
+          "id": "unbatched-read",
+          "path": "dashboard.py",
+          "side": "RIGHT",
+          "start": 5,
+          "end": 6,
+          "category": "scalability",
+          "weight": 2,
+          "keywords": [
+            "per order",
+            "n+1",
+            "round trip",
+            "query"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "empty-page",
+      "diff": "empty-page.diff",
+      "expected": [
+        {
+          "id": "empty-list-crash",
+          "path": "paging.py",
+          "side": "RIGHT",
+          "start": 2,
+          "category": "edge-cases",
+          "weight": 2,
+          "keywords": [
+            "empty",
+            "indexerror",
+            "index error"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contract",
+      "diff": "contract.diff",
+      "context": [
+        {
+          "id": "consumer:1",
+          "repo": "example/mobile-client",
+          "commit": "1234567890abcdef1234567890abcdef12345678",
+          "path": "contracts/invoice.md",
+          "file": "consumer-contract.md"
+        }
+      ],
+      "expected": [
+        {
+          "id": "breaking-currency-type",
+          "path": "invoice.py",
+          "side": "RIGHT",
+          "start": 2,
+          "category": "correctness",
+          "weight": 3,
+          "keywords": [
+            "currency",
+            "contract",
+            "consumer",
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ineffective-test",
+      "diff": "ineffective-test.diff",
+      "expected": [
+        {
+          "id": "lost-status-assertion",
+          "path": "tests/test_limits.py",
+          "side": "RIGHT",
+          "start": 3,
+          "category": "tests",
+          "weight": 2,
+          "keywords": [
+            "429",
+            "assertion",
+            "status"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "misleading-name",
+      "diff": "misleading-name.diff",
+      "expected": [
+        {
+          "id": "inverted-name",
+          "path": "access.py",
+          "side": "RIGHT",
+          "start": 2,
+          "end": 3,
+          "category": "clarity",
+          "weight": 1,
+          "keywords": [
+            "cannot_delete",
+            "inverted",
+            "name"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "clean",
+      "diff": "clean.diff",
+      "expected": []
+    }
+  ]
+}
