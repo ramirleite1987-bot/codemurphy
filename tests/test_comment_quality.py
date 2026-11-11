@@ -5,8 +5,8 @@ import unittest
 from codemurphy.config import ConfigError, load_config
 from codemurphy.context import Reference
 from codemurphy.diff import parse_patch
-from codemurphy.providers import Reply
-from codemurphy.render import comment
+from codemurphy.providers import ModelError, Reply
+from codemurphy.render import comment, markdown
 from codemurphy.review import publication_findings, run_review
 
 
@@ -160,6 +160,31 @@ class CommentQualityTests(unittest.TestCase):
         report = run_review(cfg, files, refs, provider=provider)
         self.assertEqual(report["verification"]["requests"], 0)
         self.assertEqual(report["findings"], [])
+
+    def test_report_distinguishes_empty_responses_from_discarded_proposals(self):
+        cfg, files, refs, issue = self.setup_review(verify_with="critic", min_confidence=.99)
+        for proposals, expected in (([], "The primary reviewer returned no proposals."),
+                                    ([issue, {**issue, "quote": "wrong evidence"}],
+                                     "Before verification: 1 rejected for invalid evidence or format, 1 filtered by policy.")):
+            with self.subTest(proposals=len(proposals)):
+                def provider(model, system, data, timeout):
+                    self.assertEqual(model.id, "primary")
+                    return Reply(json.dumps({"findings": proposals}), 30, 5)
+
+                result = markdown(run_review(cfg, files, refs, provider=provider))
+                self.assertIn(expected, result)
+                self.assertIn("not called: no eligible primary findings", result)
+
+    def test_failed_batch_does_not_claim_an_empty_success(self):
+        cfg, files, refs, _ = self.setup_review(verify_with="critic")
+
+        def provider(*args):
+            raise ModelError("Temporary provider failure")
+
+        result = markdown(run_review(cfg, files, refs, provider=provider))
+        self.assertIn("Prepared 1/1 eligible changed lines", result)
+        self.assertIn("Primary review incomplete", result)
+        self.assertNotIn("returned no proposals", result)
 
     def test_unknown_verifier_is_a_config_error(self):
         with self.assertRaisesRegex(ConfigError, "verify_with"):

@@ -5,6 +5,7 @@ import json
 from socketserver import TCPServer
 import threading
 import unittest
+from unittest.mock import patch
 
 from codemurphy.config import load_config
 from codemurphy.context import Reference
@@ -21,6 +22,24 @@ def finding(**changes):
 
 
 class ReviewTests(unittest.TestCase):
+    def test_provider_output_limit_is_a_failed_batch_with_usage(self):
+        replies = {
+            "openai-compatible": {"choices": [{"finish_reason": "length", "message": {"content": "private fragment"}}],
+                                  "usage": {"prompt_tokens": 100, "completion_tokens": 256}},
+            "anthropic": {"stop_reason": "max_tokens", "content": [{"type": "text", "text": "private fragment"}],
+                          "usage": {"input_tokens": 100, "output_tokens": 256}},
+        }
+        for provider, response in replies.items():
+            with self.subTest(provider=provider), patch("codemurphy.providers.json_request", return_value=response):
+                cfg = load_config({"models": [{"id": "a", "provider": provider, "model": "fixture",
+                                               "api_key_env": None, "max_output_tokens": 256}]})
+                report = run_review(cfg, [parse_patch("api.py", "@@ -8,0 +9 @@\n+load(record)")])
+                stats = report["models"]["a"]
+                self.assertEqual(stats["failed_requests"], 1)
+                self.assertEqual(stats["errors"], ["Model response reached its output token limit"])
+                self.assertEqual((stats["input_tokens"], stats["output_tokens"]), (100, 256))
+                self.assertNotIn("private fragment", json.dumps(report))
+
     def test_same_inputs_and_grounding_per_model(self):
         models = [{"id": "fast", "model": "fake-a", "api_key_env": None,
                    "input_usd_per_million": 1, "output_usd_per_million": 2},

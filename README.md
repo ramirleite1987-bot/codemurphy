@@ -132,7 +132,11 @@ mudança e rejeita referências fora do lote. Os relatórios registram códigos
 de rejeição em `rejected_reasons`, sem guardar o texto descartado.
 Configure `json_mode: true` no modelo quando o endpoint compatível aceitar
 `response_format: json_object` (por exemplo, Ollama).
-Os relatórios indicam linhas omitidas e falhas de requisição.
+Os relatórios separam linhas preparadas, arquivos excluídos, lotes que
+falharam, respostas sem propostas, propostas descartadas e confirmações.
+Se o provedor informar que atingiu o teto de saída, o lote falha com esse
+motivo e o uso de tokens continua registrado. `--mode compare` permite uma
+segunda opinião independente sem confundi-la com a etapa de confirmação.
 
 ## GitHub Actions
 

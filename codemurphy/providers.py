@@ -16,6 +16,7 @@ class Reply:
     output_tokens: int | None
     resolved_model: str | None = None
     billed_usd: float | None = None
+    stop_reason: str | None = None
 
 
 def _tokens(value):
@@ -71,19 +72,21 @@ def call(model, system, data, timeout, *, schema=None):
             cached = [_tokens(usage.get(k, 0)) for k in ("cache_creation_input_tokens", "cache_read_input_tokens")]
             in_tokens = base + sum(cached) if base is not None and None not in cached else None
             out_tokens = _tokens(usage.get("output_tokens"))
-            if result.get("stop_reason") in ("max_tokens", "refusal"):
-                content = ""
+            reason = result.get("stop_reason")
         else:
             choice = result["choices"][0]
             content = choice["message"].get("content")
-            if choice.get("finish_reason") in ("length", "content_filter"):
-                content = ""
+            reason = choice.get("finish_reason")
             in_tokens = _tokens(usage.get("prompt_tokens"))
             out_tokens = _tokens(usage.get("completion_tokens"))
+        stop = ("output_limit" if reason in ("max_tokens", "length") else
+                "refused" if reason in ("refusal", "content_filter") else None)
+        if stop:
+            content = ""
         resolved = result.get("model")
         if not isinstance(resolved, str) or not 0 < len(resolved) <= 180:
             resolved = None
         charge = _charge(usage.get("cost")) if model.provider == "openrouter" else None
-        return Reply(content if isinstance(content, str) else "", in_tokens, out_tokens, resolved, charge)
+        return Reply(content if isinstance(content, str) else "", in_tokens, out_tokens, resolved, charge, stop)
     except (AttributeError, IndexError, KeyError, TypeError):
         raise ModelError("Unrecognized provider response") from None

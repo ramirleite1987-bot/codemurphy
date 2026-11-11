@@ -336,6 +336,11 @@ def _request(model, system, data, config, provider, parse, schema=None):
     try:
         options = {"schema": schema} if model.json_schema else {}
         reply = provider(model, system, data, config.timeout, **options)
+        stop = getattr(reply, "stop_reason", None)
+        if stop == "output_limit":
+            raise ModelError("Model response reached its output token limit")
+        if stop == "refused":
+            raise ModelError("Model refused or filtered the response")
         issues, rejected, filtered = parse(reply.content)
         error = None
     except ModelError as exc:

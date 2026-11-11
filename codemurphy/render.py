@@ -41,7 +41,7 @@ def markdown(report, *, summary=False, issues=None):
     if report.get("skipped"):
         return "\n".join([*lines, "", f"Skipped: {plain(report['skipped'])}.", ""])
     cov = report["coverage"]
-    lines += ["", f"Reviewed {cov['reviewed_lines']}/{cov['eligible_lines']} eligible changed lines "
+    lines += ["", f"Prepared {cov['reviewed_lines']}/{cov['eligible_lines']} eligible changed lines "
               f"across {cov['files']} changed files; {cov['excluded_files']} excluded files, "
               f"{cov['unreviewable_files']} files without text hunks.",
               f"Context: {report['context_used']}/{report['context_available']} references selected.",
@@ -53,7 +53,7 @@ def markdown(report, *, summary=False, issues=None):
     if report.get("publication"):
         lines.append(f"GitHub review: {plain(report['publication'])}.")
     if report["models"]:
-        lines += ["", "| Reviewer | Findings | Failed batches | Tokens in / out | Billed USD | Est. USD | p95 request |",
+        lines += ["", "| Reviewer | Eligible proposals | Failed batches | Tokens in / out | Billed USD | Est. USD | p95 request |",
                   "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
         for model, stats in report["models"].items():
             def show(val):
@@ -71,12 +71,30 @@ def markdown(report, *, summary=False, issues=None):
             if reasons := stats.get("rejected_reasons"):
                 labels = ", ".join(f"{plain(reason)}: {count}" for reason, count in reasons.items())
                 lines.append(f"\n{plain(model)} rejected findings: {labels}.")
+    primary = report["models"].get(report.get("primary"))
+    if primary is not None:
+        rejected, filtered = primary.get("rejected", 0), primary.get("filtered", 0)
+        if primary["failed_requests"]:
+            lines.append("\nPrimary review incomplete: one or more model requests failed.")
+        elif not primary["requests"]:
+            lines.append("\nPrimary reviewer not called: no eligible batches.")
+        elif not (primary["findings"] or rejected or filtered):
+            lines.append("\nThe primary reviewer returned no proposals.")
+        if rejected or filtered:
+            lines.append(f"\nBefore verification: {rejected} rejected for invalid evidence or format, "
+                         f"{filtered} filtered by policy.")
     if verification := report.get("verification"):
-        lines.append(f"\nSecond review ({plain(verification['reviewer'])}): "
-                     f"{verification['confirmed']}/{verification['checked']} confirmed, "
-                     f"{verification['failed_requests']} failed batches, {verification['withheld']} beyond the cap.")
-        if (billed := verification.get("billed_usd")) is not None:
-            lines.append(f"Second review billed: USD {billed:.6f}.")
+        reviewer = plain(verification['reviewer'])
+        if not verification["requests"]:
+            lines.append(f"\nVerifier ({reviewer}) not called: no eligible primary findings.")
+        else:
+            lines.append(f"\nSecond review ({reviewer}): "
+                         f"{verification['confirmed']}/{verification['checked']} confirmed, "
+                         f"{verification['failed_requests']} failed batches, {verification['withheld']} beyond the cap.")
+            if (billed := verification.get("billed_usd")) is not None:
+                lines.append(f"Second review billed: USD {billed:.6f}.")
+        if report["mode"] == "compare":
+            lines.append("\nComparison reviewers propose independently; only primary findings go through verification.")
     if summary and report["private_context"]:
         lines.append("\nFindings and paths are omitted because private linked context was loaded.")
         return "\n".join(lines) + "\n"
